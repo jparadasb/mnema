@@ -58,6 +58,8 @@ sudo scripts/run-external-stress.sh /path/to/dedicated-workspace \
   --mode large --large-bytes 1073741824 --concurrency 1
 sudo scripts/run-external-stress.sh /path/to/dedicated-workspace \
   --mode small --small-files 1000 --small-bytes 4096 --concurrency 1
+sudo scripts/run-external-stress.sh /path/to/dedicated-workspace \
+  --minio-restart-test --fault-bytes 268435456
 ```
 
 The wrapper creates a private Docker network, dedicated MinIO container, random temporary
@@ -66,3 +68,18 @@ Mnema configuration, production database, production MinIO data, or active NAS s
 The internal Docker network has no external route. Cleanup removes the container, network,
 credentials, repository, bucket data, and generated files. The supplied workspace itself
 is never recursively removed.
+
+The restart test waits until MinIO has active multipart data, stops MinIO, requires the
+archive attempt to persist `COLD_UPLOAD_PENDING`, then starts MinIO and a new Mnema
+process. Recovery must reconcile to `FAILED_RETRYABLE`, retry to quarantine, independently
+restore both copies, and leave exactly one snapshot, one object, and no incomplete
+multipart uploads.
+
+Missing-backup fail-closed behavior uses only a disposable database and directories:
+
+```bash
+python scripts/stress-test.py --mode missing-backup
+```
+
+It passes only when worker startup fails, global deletion becomes disabled, the safety
+lock becomes enabled, and SQLite remains healthy.

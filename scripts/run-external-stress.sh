@@ -17,6 +17,12 @@ workspace="$(realpath -e -- "$1")"
 shift
 [[ -d "${workspace}" && -w "${workspace}" ]] || fail "workspace must be an existing writable directory"
 
+minio_restart_test=false
+if [[ ${1:-} == "--minio-restart-test" ]]; then
+  minio_restart_test=true
+  shift
+fi
+
 run_root="$(mktemp -d "${workspace}/mnema-external-stress.XXXXXX")"
 case "${run_root}" in
   "${workspace}"/mnema-external-stress.*) ;;
@@ -73,20 +79,70 @@ done
 [[ "$(docker inspect --format '{{.State.Health.Status}}' "${minio_container}")" == "healthy" ]] ||
   fail "isolated MinIO did not become healthy"
 
-docker run --rm \
-  --network "${network}" \
-  --user 10001:10001 \
-  --entrypoint python \
-  --volume "${run_root}:/stress" \
-  --volume "$(realpath -e -- "$(dirname -- "${BASH_SOURCE[0]}")/stress-test.py"):/stress-test.py:ro" \
-  "${HARNESS_IMAGE}" \
-  /stress-test.py \
-  "$@" \
-  --backend external \
-  --temporary-root /stress/workspace \
-  --kopia-password-file /stress/secrets/kopia-password \
-  --s3-endpoint "http://${minio_container}:9000" \
-  --s3-bucket mnema-stress \
-  --s3-access-key-file /stress/secrets/minio-user \
-  --s3-secret-key-file /stress/secrets/minio-password \
-  --cold-key-file /stress/secrets/cold-key
+run_harness() {
+  docker run --rm \
+    --network "${network}" \
+    --user 10001:10001 \
+    --entrypoint python \
+    --volume "${run_root}:/stress" \
+    --volume "$(realpath -e -- "$(dirname -- "${BASH_SOURCE[0]}")/stress-test.py"):/stress-test.py:ro" \
+    "${HARNESS_IMAGE}" \
+    /stress-test.py \
+    "$@" \
+    --backend external \
+    --temporary-root /stress/workspace \
+    --kopia-password-file /stress/secrets/kopia-password \
+    --s3-endpoint "http://${minio_container}:9000" \
+    --s3-bucket mnema-stress \
+    --s3-access-key-file /stress/secrets/minio-user \
+    --s3-secret-key-file /stress/secrets/minio-password \
+    --cold-key-file /stress/secrets/cold-key
+}
+
+if [[ "${minio_restart_test}" == "false" ]]; then
+  run_harness "$@"
+  exit
+fi
+
+attempt_output="${run_root}/attempt.json"
+run_harness \
+  --mode external-failure \
+  --fault-phase attempt \
+  --fault-root /stress/fault \
+  "$@" >"${attempt_output}" &
+attempt_pid=$!
+
+multipart_seen=false
+for _ in {1..1200}; do
+  if ! kill -0 "${attempt_pid}" 2>/dev/null; then
+    break
+  fi
+  if find "${run_root}/minio-data/.minio.sys/multipart" -type f -size +0c \
+    -print -quit 2>/dev/null | grep -q .; then
+    multipart_seen=true
+    break
+  fi
+  sleep 0.1
+done
+[[ "${multipart_seen}" == "true" ]] || fail "no active multipart upload observed"
+
+docker stop --time 1 "${minio_container}" >/dev/null
+if ! wait "${attempt_pid}"; then
+  fail "fault attempt process failed before recording expected interruption"
+fi
+docker start "${minio_container}" >/dev/null
+
+for _ in {1..30}; do
+  status="$(docker inspect --format '{{.State.Health.Status}}' "${minio_container}")"
+  [[ "${status}" == "healthy" ]] && break
+  sleep 1
+done
+[[ "$(docker inspect --format '{{.State.Health.Status}}' "${minio_container}")" == "healthy" ]] ||
+  fail "isolated MinIO did not recover"
+
+cat "${attempt_output}"
+run_harness \
+  --mode external-failure \
+  --fault-phase recover \
+  --fault-root /stress/fault \
+  "$@"

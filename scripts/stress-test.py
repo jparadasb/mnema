@@ -29,12 +29,13 @@ from mnema.adapters.cold_storage.base import ColdReceipt, ColdStorage
 from mnema.adapters.cold_storage.local import LocalEncryptedColdStorage
 from mnema.adapters.cold_storage.s3 import S3EncryptedColdStorage
 from mnema.adapters.sources.local import LocalFilesystemSourceAdapter
-from mnema.config import SourcePolicy
+from mnema.config import Settings, SourcePolicy
 from mnema.domain.states import ArchiveState
 from mnema.domain.workflow import ArchiveWorkflow
 from mnema.jobs import Database
-from mnema.jobs.models import ArchiveItem, AuditEvent
+from mnema.jobs.models import ArchiveItem, AuditEvent, RuntimeSetting
 from mnema.jobs.state_service import transition_item
+from mnema.worker.main import Worker
 from mnema.worker.recovery import reconcile_interrupted_items
 
 MIB = 1024 * 1024
@@ -94,6 +95,24 @@ class InterruptOnceColdStorage(LocalEncryptedColdStorage):
         return receipt
 
 
+class SignalingS3ColdStorage(S3EncryptedColdStorage):
+    def __init__(self, *, upload_started_file: Path, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.upload_started_file = upload_started_file
+
+    async def upload(
+        self,
+        source: Path,
+        object_identifier: str,
+        idempotency_key: str,
+    ) -> ColdReceipt:
+        with self.upload_started_file.open("xb") as marker:
+            marker.write(b"upload-started\n")
+            marker.flush()
+            os.fsync(marker.fileno())
+        return await super().upload(source, object_identifier, idempotency_key)
+
+
 def write_stream(path: Path, size: int, seed: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     digest = hashlib.sha256(seed.encode()).digest()
@@ -139,6 +158,8 @@ def workflow_for(
 def external_workflow(
     roots: dict[str, Path],
     backend: ExternalBackend,
+    *,
+    upload_started_file: Path | None = None,
 ) -> ArchiveWorkflow:
     key = backend.cold_key_file.read_bytes()
     if len(key) != 32:
@@ -150,13 +171,25 @@ def external_workflow(
             backend.kopia_password_file,
             roots["backup"] / "kopia-config" / "repository.config",
         ),
-        cold=S3EncryptedColdStorage(
-            bucket=backend.s3_bucket,
-            key=key,
-            endpoint_url=backend.s3_endpoint,
-            access_key_file=backend.s3_access_key_file,
-            secret_key_file=backend.s3_secret_key_file,
-            create_bucket_if_missing=True,
+        cold=(
+            SignalingS3ColdStorage(
+                bucket=backend.s3_bucket,
+                key=key,
+                endpoint_url=backend.s3_endpoint,
+                access_key_file=backend.s3_access_key_file,
+                secret_key_file=backend.s3_secret_key_file,
+                create_bucket_if_missing=True,
+                upload_started_file=upload_started_file,
+            )
+            if upload_started_file is not None
+            else S3EncryptedColdStorage(
+                bucket=backend.s3_bucket,
+                key=key,
+                endpoint_url=backend.s3_endpoint,
+                access_key_file=backend.s3_access_key_file,
+                secret_key_file=backend.s3_secret_key_file,
+                create_bucket_if_missing=True,
+            )
         ),
     )
 
@@ -184,6 +217,14 @@ def s3_object_count(storage: S3EncryptedColdStorage) -> int:
     paginator = storage.client.get_paginator("list_objects_v2")
     return sum(
         int(page.get("KeyCount", 0))
+        for page in paginator.paginate(Bucket=storage.bucket, Prefix="mnema/")
+    )
+
+
+def s3_multipart_upload_count(storage: S3EncryptedColdStorage) -> int:
+    paginator = storage.client.get_paginator("list_multipart_uploads")
+    return sum(
+        len(page.get("Uploads", []))
         for page in paginator.paginate(Bucket=storage.bucket, Prefix="mnema/")
     )
 
@@ -389,21 +430,27 @@ async def run_failure_case(
         workflow.backup = FilesystemVersionedBackup(roots["backup"])
         workflow.cold = LocalEncryptedColdStorage(roots["cold"], b"s" * 32)
         with database.session() as session:
-            item = session.get(ArchiveItem, item_id)
-            if item is None or item.state != ArchiveState.FAILED_RETRYABLE:
+            recovered_item = session.get(ArchiveItem, item_id)
+            if recovered_item is None or recovered_item.state != ArchiveState.FAILED_RETRYABLE:
                 raise RuntimeError(f"{stage} did not become retryable")
             transition_item(
                 session,
-                item,
+                recovered_item,
                 ArchiveState.QUEUED,
                 actor="stress-harness",
                 details={"approved_test_retry": True},
             )
-            await workflow.archive(session, item)
-            if item.state != ArchiveState.QUARANTINED:
+            await workflow.archive(session, recovered_item)
+            if recovered_item.state.value != ArchiveState.QUARANTINED.value:
                 raise RuntimeError(f"{stage} retry did not finish")
-            local_verified = await workflow.restore_local(item, root / "local.restore")
-            remote_verified = await workflow.restore_remote(item, root / "remote.restore")
+            local_verified = await workflow.restore_local(
+                recovered_item,
+                root / "local.restore",
+            )
+            remote_verified = await workflow.restore_remote(
+                recovered_item,
+                root / "remote.restore",
+            )
         snapshots = len(list(roots["backup"].glob("*.snapshot")))
         cold_objects = len(list(roots["cold"].glob("*.mnema")))
         database.close()
@@ -423,6 +470,172 @@ async def run_failure_case(
         }
 
 
+def require_external_failure_paths(args: argparse.Namespace) -> tuple[Path, ExternalBackend]:
+    if args.fault_root is None:
+        raise RuntimeError("external failure mode requires --fault-root")
+    if args.external_backend is None:
+        raise RuntimeError("external failure mode requires external backend")
+    return args.fault_root, args.external_backend
+
+
+async def run_external_failure_attempt(args: argparse.Namespace) -> dict[str, Any]:
+    fault_root, backend = require_external_failure_paths(args)
+    if fault_root.exists():
+        raise RuntimeError("fault root must not exist before attempt phase")
+    fault_root.mkdir(parents=True)
+    roots = roots_for(fault_root)
+    write_stream(roots["source"] / "proof.bin", args.fault_bytes, "external-cold-upload")
+    database = Database(f"sqlite:///{fault_root / 'mnema.sqlite'}")
+    database.create_schema()
+    workflow = external_workflow(
+        roots,
+        backend,
+        upload_started_file=fault_root / "upload-started",
+    )
+    error_type: str | None = None
+    with database.session() as session:
+        item = (await workflow.discover(session))[0]
+        item_id = item.id
+        try:
+            await workflow.archive(session, item)
+        except Exception as error:
+            error_type = type(error).__name__
+        if error_type is None:
+            raise RuntimeError("external upload was not interrupted")
+        if item.state != ArchiveState.COLD_UPLOAD_PENDING:
+            raise RuntimeError(f"unexpected interrupted state: {item.state.value}")
+    integrity_healthy = database.integrity_check()
+    database.close()
+    if not integrity_healthy:
+        raise RuntimeError("database integrity failed after interrupted upload")
+    return {
+        "phase": "attempt",
+        "item_id": item_id,
+        "interrupted_state": ArchiveState.COLD_UPLOAD_PENDING.value,
+        "error_type": error_type,
+        "database_integrity_healthy": integrity_healthy,
+    }
+
+
+async def run_external_failure_recovery(args: argparse.Namespace) -> dict[str, Any]:
+    fault_root, backend = require_external_failure_paths(args)
+    roots = {name: fault_root / name for name in ("source", "active", "backup", "cold", "staging")}
+    if not all(path.is_dir() for path in roots.values()):
+        raise RuntimeError("fault root does not contain a complete interrupted run")
+    database = Database(f"sqlite:///{fault_root / 'mnema.sqlite'}")
+    if reconcile_interrupted_items(database) != 1:
+        raise RuntimeError("external restart reconciliation count was not one")
+    workflow = external_workflow(roots, backend)
+    with database.session() as session:
+        item = session.scalar(select(ArchiveItem))
+        if item is None or item.state != ArchiveState.FAILED_RETRYABLE:
+            raise RuntimeError("external interrupted item did not become retryable")
+        transition_item(
+            session,
+            item,
+            ArchiveState.QUEUED,
+            actor="stress-harness",
+            details={"approved_test_retry": True},
+        )
+        await workflow.archive(session, item)
+        if item.state.value != ArchiveState.QUARANTINED.value:
+            raise RuntimeError("external retry did not finish")
+        local_verified = await workflow.restore_local(item, fault_root / "local.restore")
+        remote_verified = await workflow.restore_remote(item, fault_root / "remote.restore")
+        audit_events = int(session.scalar(select(func.count(AuditEvent.id))) or 0)
+    if not isinstance(workflow.backup, KopiaBackup) or not isinstance(
+        workflow.cold,
+        S3EncryptedColdStorage,
+    ):
+        raise RuntimeError("external workflow adapters have an invalid type")
+    snapshot_payload = await workflow.backup._run("snapshot", "list", "--all", "--json")
+    snapshots = len(json.loads(snapshot_payload or b"[]"))
+    objects = await asyncio.to_thread(s3_object_count, workflow.cold)
+    multipart_uploads = await asyncio.to_thread(s3_multipart_upload_count, workflow.cold)
+    integrity_healthy = database.integrity_check()
+    database.close()
+    if not local_verified or not remote_verified:
+        raise RuntimeError("external recovery restore verification failed")
+    if snapshots != 1 or objects != 1 or multipart_uploads != 0:
+        raise RuntimeError("external retry left duplicate or incomplete backup objects")
+    if not integrity_healthy:
+        raise RuntimeError("database integrity failed after external recovery")
+    return {
+        "phase": "recover",
+        "recovered_state": ArchiveState.FAILED_RETRYABLE.value,
+        "final_state": ArchiveState.QUARANTINED.value,
+        "local_restore_verified": local_verified,
+        "remote_restore_verified": remote_verified,
+        "local_snapshots": snapshots,
+        "cold_objects": objects,
+        "incomplete_multipart_uploads": multipart_uploads,
+        "audit_events": audit_events,
+        "database_integrity_healthy": integrity_healthy,
+    }
+
+
+async def run_missing_backup_case(temporary_root: Path | None = None) -> dict[str, Any]:
+    with tempfile.TemporaryDirectory(
+        prefix="mnema-missing-backup-",
+        dir=temporary_root,
+    ) as directory:
+        root = Path(directory)
+        active = root / "active"
+        staging = active / ".mnema-staging"
+        source = root / "source"
+        for path in (active, staging, source):
+            path.mkdir(parents=True)
+        database_path = root / "mnema.sqlite"
+        settings = Settings(
+            database_url=f"sqlite:///{database_path}",
+            active_root=active,
+            backup_root=root / "missing-backup",
+            staging_root=staging,
+            source_root=source,
+        )
+        database = Database(settings.database_url)
+        database.create_schema()
+        with database.session() as session:
+            session.add_all(
+                [
+                    RuntimeSetting(key="global_deletion_enabled", value="true"),
+                    RuntimeSetting(key="safety_lock", value="false"),
+                ]
+            )
+        database.close()
+
+        error_type: str | None = None
+        try:
+            await Worker(settings).run()
+        except RuntimeError as error:
+            if "startup safety checks failed" not in str(error):
+                raise
+            error_type = type(error).__name__
+        if error_type is None:
+            raise RuntimeError("worker started with missing backup storage")
+
+        reopened = Database(settings.database_url)
+        with reopened.session() as session:
+            deletion = session.get(RuntimeSetting, "global_deletion_enabled")
+            safety_lock = session.get(RuntimeSetting, "safety_lock")
+            deletion_enabled = deletion.value if deletion else None
+            safety_lock_enabled = safety_lock.value if safety_lock else None
+        integrity_healthy = reopened.integrity_check()
+        reopened.close()
+        if deletion_enabled != "false" or safety_lock_enabled != "true":
+            raise RuntimeError("missing backup did not force deletion pause and safety lock")
+        if not integrity_healthy:
+            raise RuntimeError("database integrity failed after missing-backup startup")
+        return {
+            "stage": "missing_backup_startup",
+            "worker_error_type": error_type,
+            "backup_exists": settings.backup_root.exists(),
+            "global_deletion_enabled": deletion_enabled,
+            "safety_lock": safety_lock_enabled,
+            "database_integrity_healthy": integrity_healthy,
+        }
+
+
 async def run(args: argparse.Namespace) -> dict[str, Any]:
     results: dict[str, Any] = {"temporary_data_only": True, "deletion_exercised": False}
     external = (
@@ -437,6 +650,18 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         if args.backend == "external"
         else None
     )
+    args.external_backend = external
+    if args.mode == "external-failure":
+        results["external_failure"] = (
+            await run_external_failure_attempt(args)
+            if args.fault_phase == "attempt"
+            else await run_external_failure_recovery(args)
+        )
+        return results
+    if args.mode in {"missing-backup", "all"}:
+        results["missing_backup"] = await run_missing_backup_case(args.temporary_root)
+    if args.mode == "missing-backup":
+        return results
     if args.mode in {"large", "all"}:
         results["large"] = await run_scale_case(
             ScaleCase(
@@ -471,7 +696,18 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Run Mnema archive stress tests using disposable temporary data only."
     )
-    parser.add_argument("--mode", choices=("large", "small", "failure", "all"), default="all")
+    parser.add_argument(
+        "--mode",
+        choices=(
+            "large",
+            "small",
+            "failure",
+            "external-failure",
+            "missing-backup",
+            "all",
+        ),
+        default="all",
+    )
     parser.add_argument(
         "--backend",
         choices=("local", "external"),
@@ -493,13 +729,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--s3-access-key-file", type=Path)
     parser.add_argument("--s3-secret-key-file", type=Path)
     parser.add_argument("--cold-key-file", type=Path)
+    parser.add_argument("--fault-phase", choices=("attempt", "recover"), default="attempt")
+    parser.add_argument("--fault-root", type=Path)
+    parser.add_argument("--fault-bytes", type=int, default=256 * MIB)
     parser.add_argument(
         "--smoke",
         action="store_true",
         help="Use 16 MiB and 32 small files for quick harness validation.",
     )
     args = parser.parse_args()
-    if args.large_bytes < 1 or args.small_files < 1 or args.small_bytes < 1:
+    if args.large_bytes < 1 or args.small_files < 1 or args.small_bytes < 1 or args.fault_bytes < 1:
         parser.error("sizes and file counts must be positive")
     if args.temporary_root is not None:
         if not args.temporary_root.is_dir():

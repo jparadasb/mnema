@@ -29,7 +29,13 @@ Both mounts passed exact-file write checks and expose different filesystem devic
 
 ARM64 image build and runtime passed with Docker 26.1.5, Compose 2.26.1, Kopia 0.23.1, rclone 1.60.1, SFTPGo 2.6.6, and MinIO `RELEASE.2025-07-23T15-54-02Z`. A synthetic 8 MiB item completed the persisted workflow through a real Kopia snapshot and independent restore, encrypted MinIO upload and independent download/decrypt/hash, then entered seven-day quarantine. Its source remains present; global deletion is disabled and the safety lock is enabled.
 
-Service restart recovery passed: expired leases recover to `RETRY`; interrupted download, backup, cold upload, and restore states become `FAILED_RETRYABLE`; ambiguous deletion becomes `MANUAL_REVIEW`; and immutable audit events record each reconciliation. Simulated missing backup storage forces global deletion off and enables the safety lock. SMART aggregation runs every 15 minutes and is mandatory for healthy worker startup. Physical power-cut fault injection and production deletion remain unverified.
+Service restart recovery passed: expired leases recover to `RETRY`; interrupted download,
+backup, cold upload, and restore states become `FAILED_RETRYABLE`; ambiguous deletion
+becomes `MANUAL_REVIEW`; and immutable audit events record each reconciliation. An
+isolated ARM64 worker startup with missing backup storage refused to start, forced global
+deletion off, enabled the safety lock, and retained SQLite integrity. SMART aggregation
+runs every 15 minutes and is mandatory for healthy worker startup. Physical power-cut
+fault injection and production deletion remain unverified.
 
 Disposable Pi stress runs passed 10,000 files at concurrency one and two plus a 5 GiB
 file larger than physical RAM. Peak process RSS remained below 110 MiB. Crash injection
@@ -41,8 +47,11 @@ Isolated real-adapter Pi runs passed one 1 GiB file and 1,000 files at concurren
 and two through Kopia 0.23.1 and dedicated MinIO. Exact Kopia snapshot and MinIO object
 counts matched quarantined item counts, and first/last restores passed from both copies.
 Concurrency two reduced the 1,000-file duration from 1,076.620 to 573.858 seconds.
-Mid-upload MinIO restart, real-adapter 5 GiB/10,000-file scale, and physical power loss
-remain unverified.
+A 256 MiB multipart upload interrupted by stopping dedicated MinIO remained
+`COLD_UPLOAD_PENDING`; a new process reconciled it to `FAILED_RETRYABLE`, retried it to
+quarantine, verified both restores, and found one snapshot, one object, and zero incomplete
+multipart uploads. Real-adapter 5 GiB/10,000-file scale and physical power loss remain
+unverified.
 
 SMART validation on 2026-07-28:
 

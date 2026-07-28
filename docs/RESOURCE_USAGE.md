@@ -58,7 +58,7 @@ on this host, and perform physical power-cut injection.
 
 ## Real Kopia and isolated MinIO
 
-Raspberry Pi 5 ARM64 measurements on 2026-07-29 used Kopia 0.23.1 and a dedicated
+Raspberry Pi 5 ARM64 measurements on 2026-07-28 used Kopia 0.23.1 and a dedicated
 MinIO `RELEASE.2025-07-23T15-54-02Z` container on an internal-only Docker network:
 
 - One 1 GiB file, concurrency one: 271.125 seconds and 163,376 KiB peak RSS.
@@ -73,5 +73,13 @@ database, configuration, secrets, active storage, Kopia repository, or MinIO dat
 Temporary credentials, Docker networks, repositories, buckets, and generated data were
 removed after each run.
 
-Still required on the real adapters: 5 GiB larger-than-RAM scale, 10,000 files, MinIO
-restart during active upload, missing-backup fault injection, and physical power loss.
+A separate 256 MiB multipart fault run stopped MinIO after active multipart data appeared.
+The first process failed with `EndpointConnectionError` while the item remained
+`COLD_UPLOAD_PENDING`. After MinIO and Mnema process restart, reconciliation moved the
+item to `FAILED_RETRYABLE`; retry reached quarantine with one Kopia snapshot, one MinIO
+object, zero incomplete multipart uploads, 21 audit events, healthy SQLite integrity, and
+verified local and remote restores. Isolated missing-backup worker startup also failed
+closed with deletion disabled and the safety lock enabled.
+
+Still required on the real adapters: 5 GiB larger-than-RAM scale, 10,000 files, and
+physical power loss.

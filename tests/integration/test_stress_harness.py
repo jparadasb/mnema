@@ -35,3 +35,7 @@ def test_stress_and_failure_harness_smoke() -> None:
     assert all(case["final_state"] == "QUARANTINED" for case in result["failures"])
     assert all(case["local_snapshots"] == 1 for case in result["failures"])
     assert all(case["cold_objects"] == 1 for case in result["failures"])
+    assert result["missing_backup"]["backup_exists"] is False
+    assert result["missing_backup"]["global_deletion_enabled"] == "false"
+    assert result["missing_backup"]["safety_lock"] == "true"
+    assert result["missing_backup"]["database_integrity_healthy"] is True
