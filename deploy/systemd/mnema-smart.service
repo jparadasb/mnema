@@ -1,0 +1,12 @@
+[Unit]
+Description=Mnema SMART health collector
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/mnema/scripts/collect-smart.py --output /var/lib/mnema/smart-health.json /srv/mnema-active /srv/mnema-backup
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/mnema

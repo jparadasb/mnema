@@ -1,0 +1,13 @@
+.git
+.github
+.mypy_cache
+.pytest_cache
+.ruff_cache
+.serena
+.venv
+__pycache__
+*.pyc
+data
+secrets
+tests
+

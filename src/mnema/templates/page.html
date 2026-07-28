@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ page_name|replace("_", " ")|title }}</h1>
+<p class="warning">{{ text.warning }}</p>
+{% if request.query_params.get("saved") %}<p role="status">Policy saved.</p>{% endif %}
+{% if request.query_params.get("paused") %}<p role="status">Deletion paused and safety lock enabled.</p>{% endif %}
+{% if request.query_params.get("verified") %}<p role="status">Restore completed and SHA-256 verified.</p>{% endif %}
+<section class="cards" aria-label="System summary">
+  <article><strong>{{ counts.items }}</strong><span>Archive items</span></article>
+  <article><strong>{{ counts.jobs }}</strong><span>Jobs</span></article>
+  <article><strong>{{ counts.audits }}</strong><span>Audit events</span></article>
+</section>
+
+{% if page_name == "dashboard" %}
+<h2>Safety status</h2>
+<dl>
+  <dt>Storage health</dt><dd>{{ "Healthy" if health.healthy else "Blocked" }}</dd>
+  <dt>Separate devices</dt><dd>{{ "Yes" if health.devices_differ else "No" }}</dd>
+  <dt>SQLite integrity</dt><dd>{{ "Healthy" if health.sqlite_healthy else "Failed" }}</dd>
+</dl>
+{% endif %}
+
+{% if page_name == "sources" %}
+<h2>Local test source preview</h2>
+<p>iCloud adapters are not implemented. Archive action never deletes source files.</p>
+<div class="table-scroll"><table>
+  <thead><tr><th>Path</th><th>Size</th><th>Eligible</th><th>Reason</th></tr></thead>
+  <tbody>
+  {% for row in preview %}
+    <tr>
+      <td>{{ row.object.relative_path }}</td>
+      <td>{{ row.object.size }}</td>
+      <td>{{ "Yes" if row.decision.eligible else "No" }}</td>
+      <td>{{ row.decision.reasons|join(", ") }}</td>
+    </tr>
+  {% else %}<tr><td colspan="4">No source files discovered.</td></tr>{% endfor %}
+  </tbody>
+</table></div>
+<form method="post" action="/sources/archive">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <button type="submit">Archive eligible files</button>
+</form>
+{% endif %}
+
+{% if page_name == "storage" %}
+<h2>Mounted storage</h2>
+<dl>
+  <dt>Active</dt><dd>{{ health.active.path }} — {{ "%.1f"|format(health.active.free_percent) }}% free</dd>
+  <dt>Backup</dt><dd>{{ health.backup.path }} — {{ "%.1f"|format(health.backup.free_percent) }}% free</dd>
+  <dt>Different devices</dt><dd>{{ "Yes" if health.devices_differ else "No — unsafe" }}</dd>
+  <dt>SFTPGo</dt><dd>{{ "Healthy" if sftpgo_healthy else "Unavailable" }}</dd>
+</dl>
+<p>SFTPGo exposes active storage only. Backup repository, Mnema configuration, and secrets stay private.</p>
+{% endif %}
+
+{% if page_name == "policies" %}
+<h2>Archive policy</h2>
+<form method="post" action="/policies">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <label>Archive after days <input name="archive_after_days" type="number" min="0" max="36500" value="{{ policy.archive_after_days }}" required></label>
+  <label>Stability window hours <input name="stability_window_hours" type="number" min="0" max="8760" value="{{ policy.stability_window_hours }}" required></label>
+  <label>Quarantine days <input name="quarantine_days" type="number" min="1" max="3650" value="{{ policy.quarantine_days }}" required></label>
+  <label>Minimum file size <input name="minimum_file_size" type="number" min="0" value="{{ policy.minimum_file_size }}" required></label>
+  <label>Maximum file size <input name="maximum_file_size" type="number" min="1" value="{{ policy.maximum_file_size or '' }}"></label>
+  <label class="check"><input name="dry_run" type="checkbox" value="true" {% if policy.dry_run %}checked{% endif %}> Dry-run only</label>
+  <label class="check"><input name="manual_approval" type="checkbox" value="true" {% if policy.manual_approval %}checked{% endif %}> Require manual approval for future deletion</label>
+  <p class="warning">Production deletion remains unavailable regardless of this policy.</p>
+  <button type="submit">Save policy</button>
+</form>
+{% endif %}
+
+{% if page_name in ["archive", "quarantine", "restores"] %}
+<div class="table-scroll"><table>
+  <thead><tr><th>ID</th><th>Original path</th><th>State</th><th>SHA-256</th>{% if page_name == "restores" %}<th>Restore tests</th>{% endif %}</tr></thead>
+  <tbody>
+  {% for item in items %}
+  <tr>
+    <td>{{ item.id }}</td><td>{{ item.original_path }}</td><td>{{ item.state }}</td>
+    <td><code>{{ item.plaintext_sha256 or "pending" }}</code></td>
+    {% if page_name == "restores" %}
+    <td>
+      <form method="post" action="/restores/{{ item.id }}/local" class="inline-form">
+        <input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit" {% if not item.kopia_snapshot_id %}disabled{% endif %}>Test local</button>
+      </form>
+      <form method="post" action="/restores/{{ item.id }}/remote" class="inline-form">
+        <input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit" {% if not item.remote_verified_at %}disabled{% endif %}>Test remote</button>
+      </form>
+      <small>{{ item.restore_test_status or "Not tested from web" }}</small>
+    </td>{% endif %}
+  </tr>
+  {% else %}<tr><td colspan="5">No matching archive items.</td></tr>{% endfor %}
+  </tbody>
+</table></div>
+{% endif %}
+
+{% if page_name == "jobs" %}
+<div class="table-scroll"><table>
+  <thead><tr><th>ID</th><th>Kind</th><th>Adapter</th><th>Status</th><th>Attempts</th></tr></thead>
+  <tbody>{% for job in job_rows %}<tr><td>{{ job.id }}</td><td>{{ job.kind }}</td><td>{{ job.adapter }}</td><td>{{ job.status }}</td><td>{{ job.attempts }}</td></tr>
+  {% else %}<tr><td colspan="5">Queue empty.</td></tr>{% endfor %}</tbody>
+</table></div>
+{% endif %}
+
+{% if page_name == "audit" %}
+<div class="table-scroll"><table>
+  <thead><tr><th>Time</th><th>Item</th><th>Event</th><th>Transition</th><th>Actor</th></tr></thead>
+  <tbody>{% for event in events %}<tr><td>{{ event.created_at }}</td><td>{{ event.archive_item_id or "—" }}</td><td>{{ event.event_type }}</td><td>{{ event.from_state or "—" }} / {{ event.to_state or "—" }}</td><td>{{ event.actor }}</td></tr>
+  {% else %}<tr><td colspan="5">No audit events.</td></tr>{% endfor %}</tbody>
+</table></div>
+{% endif %}
+
+{% if page_name == "settings" %}
+<h2>Deletion safety</h2>
+<dl><dt>Global deletion</dt><dd>{{ "Enabled" if deletion_enabled else "Disabled" }}</dd><dt>Safety lock</dt><dd>{{ "Active" if safety_lock else "Inactive" }}</dd></dl>
+<form method="post" action="/settings/pause-deletion">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <button type="submit" class="danger">Emergency pause deletion</button>
+</form>
+<p>No web control enables production deletion.</p>
+{% endif %}
+
+{% if page_name == "diagnostics" %}
+<h2>Startup checks</h2>
+<dl>
+  <dt>Overall</dt><dd>{{ "Healthy" if health.healthy else "Blocked" }}</dd>
+  <dt>SQLite</dt><dd>{{ "Healthy" if health.sqlite_healthy else "Failed" }}</dd>
+  <dt>SMART</dt><dd>{{ "Healthy" if health.smart_healthy else ("Unavailable" if health.smart_healthy is none else "Failed") }}</dd>
+  <dt>Expired jobs recovered</dt><dd>{{ health.expired_jobs_recovered }}</dd>
+  <dt>Partial files</dt><dd>{{ health.partial_files|length }}</dd>
+</dl>
+<a href="/healthz">Machine-readable health endpoint</a>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="{{ language }}">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Mnema</title>
+    <link rel="stylesheet" href="/static/mnema.css">
+  </head>
+  <body>
+    <header>
+      <a href="/dashboard" class="brand">Mnema</a>
+      <span>{{ text.tagline }}</span>
+      {% if authenticated %}
+      <form method="post" action="/logout" class="inline-form">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <button type="submit" class="link-button">Log out</button>
+      </form>
+      {% endif %}
+    </header>
+    <nav aria-label="Administration">
+      {% for page in pages %}<a href="/{{ page }}">{{ page|replace("_", " ")|title }}</a>{% endfor %}
+    </nav>
+    <main>{% block content %}{% endblock %}</main>
+    <footer>{{ text.warning }}</footer>
+  </body>
+</html>

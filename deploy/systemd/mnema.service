@@ -1,0 +1,18 @@
+[Unit]
+Description=Mnema personal cloud archiving appliance
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/mnema
+ExecStart=/usr/bin/docker compose up -d --remove-orphans
+ExecStop=/usr/bin/docker compose down
+TimeoutStartSec=0
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
+

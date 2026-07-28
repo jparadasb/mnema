@@ -1,0 +1,14 @@
+:root{font-family:system-ui,sans-serif;color-scheme:light dark;line-height:1.5}
+body{max-width:72rem;margin:auto;padding:1rem}
+header{display:flex;gap:1rem;align-items:baseline;flex-wrap:wrap}.brand{font-size:1.6rem;font-weight:800}
+nav{display:flex;gap:.5rem;overflow-x:auto;padding:.75rem 0}nav a{white-space:nowrap;padding:.5rem}
+main{min-height:65vh}form{display:grid;gap:1rem;max-width:36rem}label{display:grid;gap:.25rem}
+input,button{font:inherit;padding:.75rem}button{min-height:44px}.warning{border-left:.3rem solid #d97706;padding:.75rem}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(9rem,1fr));gap:1rem}
+.cards article{display:grid;padding:1rem;border:1px solid currentColor;border-radius:.4rem}.cards strong{font-size:2rem}
+.inline-form{display:inline}.link-button{border:0;background:none;color:inherit;text-decoration:underline;padding:.25rem;min-height:0}
+.check{display:flex;grid-template-columns:auto 1fr;align-items:center}.check input{width:1.25rem;height:1.25rem}
+.table-scroll{overflow-x:auto;margin:1rem 0}table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:.65rem;border-bottom:1px solid #777;vertical-align:top}
+code{overflow-wrap:anywhere}.danger{border:2px solid #b91c1c}dl{display:grid;grid-template-columns:minmax(8rem,auto) 1fr;gap:.5rem 1rem}dt{font-weight:700}dd{margin:0}
+a:focus,input:focus,button:focus{outline:3px solid #2563eb;outline-offset:2px}
+@media(max-width:38rem){body{padding:.75rem}nav{margin-inline:-.75rem;padding-inline:.75rem}.cards{grid-template-columns:1fr}dl{grid-template-columns:1fr}dd{margin-bottom:.5rem}}

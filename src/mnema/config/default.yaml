@@ -1,0 +1,14 @@
+sources:
+  local_test:
+    archive_after_days: 30
+    stability_window_hours: 24
+    quarantine_days: 7
+    deletion_enabled: false
+limits:
+  max_files_deleted_per_run: 5
+  max_bytes_deleted_per_run: 1000000000
+  max_percentage_deleted_per_run: 1
+storage:
+  pause_when_active_disk_free_percent_below: 10
+  pause_when_backup_disk_free_percent_below: 10
+

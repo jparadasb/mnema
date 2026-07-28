@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Administrator login</h1>
+<form method="post">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+  <button type="submit">Login</button>
+</form>
+{% endblock %}
+

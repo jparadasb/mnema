@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ text.setup }}</h1>
+{% if saved %}<p role="status">Setup saved. Deletion remains paused.</p>{% endif %}
+<ol>
+  <li>Administrator</li><li>Storage</li><li>Local test source</li><li>MinIO</li>
+  <li>Policy</li><li>Dry-run</li><li>Local restore</li><li>Remote restore</li><li>Review</li>
+</ol>
+<form method="post">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <label>One-time onboarding token <input name="onboarding_token" type="password" autocomplete="one-time-code" required></label>
+  <label>Administrator name <input name="admin_name" autocomplete="username" required></label>
+  <label>Password (12+ characters) <input name="password" type="password" minlength="12" autocomplete="new-password" required></label>
+  <label>Active storage path <input name="active_root" value="/data/active" required></label>
+  <label>Backup storage path <input name="backup_root" value="/data/backup" required></label>
+  <p class="warning">Paths must reside on different mounted devices. Mnema never formats disks.</p>
+  <button type="submit">{{ text.save }}</button>
+</form>
+{% endblock %}

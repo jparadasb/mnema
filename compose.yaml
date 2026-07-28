@@ -1,0 +1,79 @@
+name: mnema
+services:
+  web:
+    build:
+      context: .
+    image: mnema:0.1.0
+    command: ["web", "--host", "0.0.0.0", "--port", "8080"]
+    restart: unless-stopped
+    env_file: [.env]
+    ports: ["8080:8080"]
+    volumes:
+      - ${MNEMA_HOST_CONFIG_ROOT:-./data/config}:/var/lib/mnema
+      - ${MNEMA_HOST_ACTIVE_ROOT:-./data/active}:/data/active
+      - ${MNEMA_HOST_BACKUP_ROOT:-./data/backup}:/data/backup
+      - ${MNEMA_HOST_SOURCE_ROOT:-./data/test-source}:/data/test-source:ro
+      - ./secrets:/run/secrets:ro
+    read_only: true
+    tmpfs: ["/tmp:mode=1777,size=128m"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      worker:
+        condition: service_started
+  worker:
+    image: mnema:0.1.0
+    command: ["worker"]
+    restart: unless-stopped
+    env_file: [.env]
+    volumes:
+      - ${MNEMA_HOST_CONFIG_ROOT:-./data/config}:/var/lib/mnema
+      - ${MNEMA_HOST_ACTIVE_ROOT:-./data/active}:/data/active
+      - ${MNEMA_HOST_BACKUP_ROOT:-./data/backup}:/data/backup
+      - ${MNEMA_HOST_SOURCE_ROOT:-./data/test-source}:/data/test-source
+      - ./secrets:/run/secrets:ro
+    read_only: true
+    tmpfs: ["/tmp:mode=1777,size=256m"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      disable: true
+  sftpgo:
+    image: drakkan/sftpgo:v2.6.6
+    user: "10001:10001"
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8081:8080"
+      - "2022:2022"
+    volumes:
+      - ${MNEMA_HOST_SFTPGO_DATA_ROOT:-./data/sftpgo-data}:/var/lib/sftpgo
+      - ${MNEMA_HOST_SFTPGO_HOME_ROOT:-./data/sftpgo-home}:/srv/sftpgo
+      - ${MNEMA_HOST_ACTIVE_ROOT:-./data/active}:/srv/mnema-active
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-07-23T15-54-02Z
+    user: "10001:10001"
+    profiles: ["integration"]
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER_FILE: /run/secrets/minio_user
+      MINIO_ROOT_PASSWORD_FILE: /run/secrets/minio_password
+    ports: ["127.0.0.1:9000:9000", "127.0.0.1:9001:9001"]
+    volumes:
+      - ${MNEMA_HOST_MINIO_ROOT:-./data/minio}:/data
+      - ./secrets:/run/secrets:ro
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+  cloudflared:
+    image: cloudflare/cloudflared:2025.7.0
+    profiles: ["cloudflare"]
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN_FILE: /run/secrets/cloudflare_tunnel_token
+    volumes:
+      - ./secrets:/run/secrets:ro
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    depends_on: [web, sftpgo]

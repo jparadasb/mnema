@@ -1,0 +1,11 @@
+[Unit]
+Description=Collect Mnema disk SMART health periodically
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=15min
+RandomizedDelaySec=30s
+Persistent=true
+
+[Install]
+WantedBy=timers.target

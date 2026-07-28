@@ -1,0 +1,17 @@
+.env
+.venv/
+.serena/
+__pycache__/
+*.py[cod]
+*.db
+.coverage
+coverage.xml
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+data/
+secrets/
+dist/
+build/
+
