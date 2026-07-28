@@ -55,6 +55,7 @@ ruff format --check .
 mypy src
 pytest
 mnema test-vertical-slice
+python scripts/stress-test.py --smoke --mode all --concurrency 2
 ```
 
 Run web:
@@ -120,6 +121,7 @@ mnema diagnostics
 - [Threat model](docs/THREAT_MODEL.md)
 - [Storage](docs/STORAGE.md)
 - [Recovery](docs/RECOVERY.md)
+- [Stress testing](docs/STRESS_TESTING.md)
 - [Installation](docs/INSTALLATION.md)
 - [Security policy](SECURITY.md)
 

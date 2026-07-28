@@ -9,10 +9,18 @@ from mnema.adapters.backup.filesystem import FilesystemVersionedBackup
 from mnema.adapters.cold_storage.local import LocalEncryptedColdStorage
 from mnema.adapters.sources.local import LocalFilesystemSourceAdapter
 from mnema.config import DeletionLimits, SourcePolicy
+from mnema.domain.source import DeleteReceipt
 from mnema.domain.states import ArchiveState
 from mnema.domain.workflow import ArchiveWorkflow
 from mnema.jobs import Database
+from mnema.jobs.models import ArchiveItem
 from mnema.policies.deletion import DeletionRunUsage
+from mnema.worker.recovery import reconcile_interrupted_items
+
+
+class CrashDuringDeleteSource(LocalFilesystemSourceAdapter):
+    async def delete(self, source_id: str, expected_version: str) -> DeleteReceipt:
+        raise SystemExit("simulated process loss during deletion")
 
 
 def build(tmp_path: Path, *, quarantine_days: int = 0) -> tuple[Database, ArchiveWorkflow, Path]:
@@ -130,3 +138,40 @@ async def test_interrupted_download_preserves_partial(tmp_path: Path) -> None:
             await workflow.archive(session, item)
         partial = tmp_path / "staging" / f"{item.id}.partial"
         assert partial.exists()
+
+
+@pytest.mark.asyncio
+async def test_deleting_checkpoint_survives_process_loss(tmp_path: Path) -> None:
+    database, workflow, _ = build(tmp_path)
+    with database.session() as session:
+        item = (await workflow.discover(session))[0]
+        await workflow.archive(session, item)
+        item.quarantine_expires_at = datetime.now(UTC) - timedelta(seconds=1)
+        item_id = item.id
+    workflow.source = CrashDuringDeleteSource(tmp_path / "source", allow_delete=True)
+
+    with pytest.raises(SystemExit, match="simulated process loss"):
+        with database.session() as session:
+            item = session.get(ArchiveItem, item_id)
+            assert item is not None
+            decision = await workflow.deletion_decision(
+                item,
+                active_disk_healthy=True,
+                backup_disk_healthy=True,
+                storage_devices_differ=True,
+                sqlite_integrity_healthy=True,
+                global_deletion_enabled=True,
+                safety_lock=False,
+                usage=DeletionRunUsage(0, 0, 100),
+                limits=DeletionLimits(max_percentage_deleted_per_run=100),
+            )
+            assert decision.allowed
+            await workflow.delete_test_item(session, item, decision)
+
+    with database.session() as session:
+        item = session.get(ArchiveItem, item_id)
+        assert item is not None and item.state == ArchiveState.DELETING
+    assert reconcile_interrupted_items(database) == 1
+    with database.session() as session:
+        item = session.get(ArchiveItem, item_id)
+        assert item is not None and item.state == ArchiveState.MANUAL_REVIEW

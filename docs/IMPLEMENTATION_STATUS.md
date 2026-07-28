@@ -18,7 +18,7 @@ Repository/docs, typed source protocol, local source, central state graph, SQLAl
 
 ## Hardware validation
 
-Native Python validation passed on Raspberry Pi 5 Model B Rev 1.0, Debian 13 ARM64, and Python 3.13.5: Ruff, strict mypy, local vertical proof, and synthetic resource measurements. Current x86_64 validation passes all 41 tests, including the complete browser journey, with 75% statement coverage. See `RESOURCE_USAGE.md`.
+Native Python validation passed on Raspberry Pi 5 Model B Rev 1.0, Debian 13 ARM64, and Python 3.13.5: Ruff, strict mypy, local vertical proof, browser E2E, crash injection, and synthetic resource measurements. Current x86_64 validation passes all 43 tests, including the complete browser and stress-harness journeys, with 77% statement coverage. See `RESOURCE_USAGE.md`.
 
 Radxa Penta SATA HAT enumeration passes after enabling external PCIe and the JMB585 32-bit DMA overlay. Controller negotiated PCIe Gen 2 x1. Two SSDs were identified independently, formatted only after explicit confirmation, and mounted using UUIDs:
 
@@ -30,6 +30,12 @@ Both mounts passed exact-file write checks and expose different filesystem devic
 ARM64 image build and runtime passed with Docker 26.1.5, Compose 2.26.1, Kopia 0.23.1, rclone 1.60.1, SFTPGo 2.6.6, and MinIO `RELEASE.2025-07-23T15-54-02Z`. A synthetic 8 MiB item completed the persisted workflow through a real Kopia snapshot and independent restore, encrypted MinIO upload and independent download/decrypt/hash, then entered seven-day quarantine. Its source remains present; global deletion is disabled and the safety lock is enabled.
 
 Service restart recovery passed: expired leases recover to `RETRY`; interrupted download, backup, cold upload, and restore states become `FAILED_RETRYABLE`; ambiguous deletion becomes `MANUAL_REVIEW`; and immutable audit events record each reconciliation. Simulated missing backup storage forces global deletion off and enables the safety lock. SMART aggregation runs every 15 minutes and is mandatory for healthy worker startup. Physical power-cut fault injection and production deletion remain unverified.
+
+Disposable Pi stress runs passed 10,000 files at concurrency one and two plus a 5 GiB
+file larger than physical RAM. Peak process RSS remained below 110 MiB. Crash injection
+after download, backup write, and encrypted cold upload recovered to quarantine with one
+snapshot/object and independently verified restores. These tests used local protocol
+adapters rather than Kopia/MinIO; see `RESOURCE_USAGE.md`.
 
 SMART validation on 2026-07-28:
 

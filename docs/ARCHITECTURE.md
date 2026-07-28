@@ -33,7 +33,13 @@ Mnema owns policy, state, verification, safety, restore orchestration, health, a
 
 ## Persistence
 
-SQLAlchemy 2 models use SQLite. State transitions lock the transaction logically, validate against a central transition graph, update state, and insert an immutable audit row before commit. SQLite serializes writes; one worker minimizes contention.
+SQLAlchemy 2 models use SQLite. State transitions validate against a central graph,
+update state, and insert an immutable audit row in the same transaction. Archive
+checkpoints commit before and after external download, backup, upload, verification, and
+deletion calls. No SQLite write transaction remains open while waiting for external I/O,
+and `DELETING` is durable before the source call begins. SQLite still serializes writes;
+concurrency one is default, while concurrency two passed the disposable 10,000-file
+stress run.
 
 Jobs use `available_at`, `lease_owner`, `lease_expires_at`, attempts, maximum attempts, heartbeat timestamps, and unique idempotency keys. Expired running jobs return to pending during startup recovery. Backoff is capped exponential.
 
@@ -55,4 +61,3 @@ Server-rendered, mobile-first pages provide setup, status, policy preview, queue
 ## Deployment
 
 One image runs `mnema web` or `mnema worker`. Compose includes Mnema, SFTPGo, MinIO test profile, and optional cloudflared profile. Production expects host-managed UUID mounts. systemd supervises Compose.
-

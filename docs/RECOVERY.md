@@ -2,7 +2,12 @@
 
 ## Power loss or restart
 
-Startup checks storage existence/writability, device separation, SQLite integrity, host-collected SMART health, expired leases, and `.partial` inventory. `DELETING` items enter manual review because process disappearance is not proof of external completion. Deletion stays paused until explicit healthy resume.
+Startup checks storage existence/writability, device separation, SQLite integrity,
+host-collected SMART health, expired leases, and `.partial` inventory. Durable checkpoints
+around external operations let startup distinguish retryable transfer/backup/upload states
+from ambiguous deletion. `DELETING` is committed before the source call and enters manual
+review after restart because process disappearance is not proof of external completion.
+Deletion stays paused until explicit healthy resume.
 
 `mnema-smart.timer` refreshes `/var/lib/mnema/smart-health.json` every 15 minutes. Missing, malformed, or failed SMART reports block worker startup on an installed appliance.
 

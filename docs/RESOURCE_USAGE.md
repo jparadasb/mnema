@@ -34,4 +34,24 @@ Raspberry Pi 5 idle measurement on 2026-07-28 after restart, with web, worker, S
 
 This passes the approximately 1.2 GB idle target. Values came from container init process `/proc/<pid>/status`; `docker stats` returned unusable zero counters on this host.
 
-Still required: archive a file larger than RAM, run at least 10,000 small files, record peak whole-container cgroup memory during Kopia/MinIO activity, and repeat at concurrency two.
+## Disposable stress harness
+
+Raspberry Pi 5 ARM64 measurements on 2026-07-28 used the temporary-data-only harness
+with filesystem versioned backup, AES-256-GCM local cold storage, SQLite WAL, and
+independent restores. They did not use Kopia or MinIO:
+
+- 10,000 files of 4 KiB, concurrency one: 330.976 seconds, 109,488 KiB peak RSS,
+  19,443,712-byte SQLite database, 120,000 audit events.
+- 10,000 files of 4 KiB, concurrency two: 302.738 seconds, 108,944 KiB peak RSS,
+  19,460,096-byte SQLite database, 120,000 audit events.
+- One 5 GiB file on a host with 4,177,936,384 bytes physical memory: 774.774 seconds,
+  71,952 KiB peak RSS, 45,056-byte SQLite database.
+
+Every run produced matching item, snapshot, and encrypted-object counts. First/last
+sample restores passed for both local and cold copies. Crash injection after download,
+backup write, and encrypted upload also recovered without duplicate objects. Generated
+data was automatically removed; the dedicated workspace returned to 4 KiB.
+
+Still required: repeat larger-than-RAM and 10,000-file measurements through real
+Kopia/MinIO adapters, capture reliable cgroup peaks while `docker stats` remains broken
+on this host, and perform physical power-cut injection.

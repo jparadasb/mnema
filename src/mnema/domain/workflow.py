@@ -93,6 +93,7 @@ class ArchiveWorkflow:
             transition_item(session, item, ArchiveState.QUEUED, actor="worker")
         if item.state == ArchiveState.QUEUED:
             transition_item(session, item, ArchiveState.DOWNLOADING, actor="worker")
+            session.commit()
         if item.state == ArchiveState.DOWNLOADING:
             staged = partial_path(self.staging_root, item.id)
             if staged.exists():
@@ -107,14 +108,17 @@ class ArchiveWorkflow:
                     actor="worker",
                     details={"stage": "download"},
                 )
+                session.commit()
                 return item
             item.plaintext_sha256 = receipt.sha256
             transition_item(session, item, ArchiveState.LOCAL_STAGED, actor="worker")
+            session.commit()
         staged = partial_path(self.staging_root, item.id)
         if item.state == ArchiveState.LOCAL_STAGED:
             if sha256_file(staged) != item.plaintext_sha256:
                 raise VerificationFailure("staged copy hash mismatch")
             transition_item(session, item, ArchiveState.LOCAL_VERIFIED, actor="worker")
+            session.commit()
         if item.state == ArchiveState.LOCAL_VERIFIED:
             assert item.plaintext_sha256 is not None
             commit = commit_staged(
@@ -134,8 +138,10 @@ class ArchiveWorkflow:
                 actor="worker",
                 details={"filename_transformed_from": commit.transformed_from},
             )
+            session.commit()
         if item.state == ArchiveState.LOCAL_COMMITTED:
             transition_item(session, item, ArchiveState.LOCAL_BACKUP_PENDING, actor="worker")
+            session.commit()
         if item.state == ArchiveState.LOCAL_BACKUP_PENDING:
             assert item.nas_path is not None and item.plaintext_sha256 is not None
             backup_receipt = await self.backup.snapshot(Path(item.nas_path), f"item-{item.id}")
@@ -149,8 +155,10 @@ class ArchiveWorkflow:
                 ArchiveState.LOCAL_BACKUP_VERIFIED,
                 actor="worker",
             )
+            session.commit()
         if item.state == ArchiveState.LOCAL_BACKUP_VERIFIED:
             transition_item(session, item, ArchiveState.COLD_UPLOAD_PENDING, actor="worker")
+            session.commit()
         if item.state == ArchiveState.COLD_UPLOAD_PENDING:
             assert item.nas_path is not None and item.plaintext_sha256 is not None
             cold_receipt = await self.cold.upload(
@@ -160,6 +168,7 @@ class ArchiveWorkflow:
             )
             self._record_cold_receipt(item, cold_receipt)
             transition_item(session, item, ArchiveState.COLD_UPLOADED, actor="worker")
+            session.commit()
         if item.state == ArchiveState.COLD_UPLOADED:
             assert item.plaintext_sha256 is not None
             cold_verification_receipt = self._cold_receipt(item)
@@ -168,9 +177,11 @@ class ArchiveWorkflow:
             item.remote_verified_at = utcnow()
             item.remote_verification_method = "download-decrypt-sha256"
             transition_item(session, item, ArchiveState.COLD_VERIFIED, actor="worker")
+            session.commit()
         if item.state == ArchiveState.COLD_VERIFIED:
             item.quarantine_expires_at = utcnow() + timedelta(days=self.policy.quarantine_days)
             transition_item(session, item, ArchiveState.QUARANTINED, actor="worker")
+            session.commit()
         return item
 
     async def restore_local(
@@ -275,6 +286,7 @@ class ArchiveWorkflow:
         if item.state == ArchiveState.READY_FOR_REVALIDATION:
             transition_item(session, item, ArchiveState.READY_FOR_DELETION, actor="guard")
         transition_item(session, item, ArchiveState.DELETING, actor="guard")
+        session.commit()
         try:
             receipt = await self.source.delete(item.source_identifier, item.source_version)
         except SourceChangedError:
