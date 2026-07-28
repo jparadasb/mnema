@@ -13,6 +13,8 @@ import shutil
 import sys
 import tempfile
 import time
+import urllib.parse
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,10 +22,12 @@ from typing import Any
 
 from sqlalchemy import func, select, text
 
-from mnema.adapters.backup.base import BackupReceipt
+from mnema.adapters.backup.base import BackupReceipt, VersionedBackup
 from mnema.adapters.backup.filesystem import FilesystemVersionedBackup
-from mnema.adapters.cold_storage.base import ColdReceipt
+from mnema.adapters.backup.kopia import KopiaBackup
+from mnema.adapters.cold_storage.base import ColdReceipt, ColdStorage
 from mnema.adapters.cold_storage.local import LocalEncryptedColdStorage
+from mnema.adapters.cold_storage.s3 import S3EncryptedColdStorage
 from mnema.adapters.sources.local import LocalFilesystemSourceAdapter
 from mnema.config import SourcePolicy
 from mnema.domain.states import ArchiveState
@@ -47,6 +51,16 @@ class ScaleCase:
     @property
     def source_bytes(self) -> int:
         return self.file_count * self.file_size
+
+
+@dataclass(frozen=True)
+class ExternalBackend:
+    kopia_password_file: Path
+    s3_endpoint: str
+    s3_bucket: str
+    s3_access_key_file: Path
+    s3_secret_key_file: Path
+    cold_key_file: Path
 
 
 class InterruptOnceBackup(FilesystemVersionedBackup):
@@ -105,8 +119,8 @@ def workflow_for(
     roots: dict[str, Path],
     *,
     source: LocalFilesystemSourceAdapter | None = None,
-    backup: FilesystemVersionedBackup | None = None,
-    cold: LocalEncryptedColdStorage | None = None,
+    backup: VersionedBackup | None = None,
+    cold: ColdStorage | None = None,
 ) -> ArchiveWorkflow:
     return ArchiveWorkflow(
         source=source or LocalFilesystemSourceAdapter(roots["source"]),
@@ -118,6 +132,31 @@ def workflow_for(
             archive_after_days=0,
             stability_window_hours=0,
             quarantine_days=7,
+        ),
+    )
+
+
+def external_workflow(
+    roots: dict[str, Path],
+    backend: ExternalBackend,
+) -> ArchiveWorkflow:
+    key = backend.cold_key_file.read_bytes()
+    if len(key) != 32:
+        raise ValueError("external cold encryption key must contain exactly 32 bytes")
+    return workflow_for(
+        roots,
+        backup=KopiaBackup(
+            roots["backup"] / "kopia-repository",
+            backend.kopia_password_file,
+            roots["backup"] / "kopia-config" / "repository.config",
+        ),
+        cold=S3EncryptedColdStorage(
+            bucket=backend.s3_bucket,
+            key=key,
+            endpoint_url=backend.s3_endpoint,
+            access_key_file=backend.s3_access_key_file,
+            secret_key_file=backend.s3_secret_key_file,
+            create_bucket_if_missing=True,
         ),
     )
 
@@ -141,11 +180,23 @@ def physical_memory_bytes() -> int | None:
     return int(pages * page_size)
 
 
+def s3_object_count(storage: S3EncryptedColdStorage) -> int:
+    paginator = storage.client.get_paginator("list_objects_v2")
+    return sum(
+        int(page.get("KeyCount", 0))
+        for page in paginator.paginate(Bucket=storage.bucket, Prefix="mnema/")
+    )
+
+
 async def archive_ids(
     database: Database,
     workflow: ArchiveWorkflow,
     item_ids: list[int],
     concurrency: int,
+    workflow_factory: Callable[[], ArchiveWorkflow] | None = None,
+    *,
+    progress_offset: int = 0,
+    progress_total: int | None = None,
 ) -> None:
     def archive_in_worker_thread(item_id: int) -> None:
         async def execute() -> None:
@@ -153,21 +204,24 @@ async def archive_ids(
                 item = session.get(ArchiveItem, item_id)
                 if item is None:
                     raise RuntimeError(f"archive item {item_id} disappeared")
-                await workflow.archive(session, item)
+                worker_workflow = workflow_factory() if workflow_factory else workflow
+                await worker_workflow.archive(session, item)
 
         asyncio.run(execute())
 
-    progress_interval = max(1, len(item_ids) // 10)
+    total = progress_total or len(item_ids)
+    progress_interval = max(1, total // 10)
     with ThreadPoolExecutor(max_workers=concurrency) as executor:
         for completed, _ in enumerate(
             executor.map(archive_in_worker_thread, item_ids),
             start=1,
         ):
-            if len(item_ids) >= 100 and (
-                completed % progress_interval == 0 or completed == len(item_ids)
+            completed_total = progress_offset + completed
+            if total >= 100 and (
+                completed_total % progress_interval == 0 or completed_total == total
             ):
                 print(
-                    f"archive progress: {completed}/{len(item_ids)}",
+                    f"archive progress: {completed_total}/{total}",
                     file=sys.stderr,
                     flush=True,
                 )
@@ -176,6 +230,7 @@ async def archive_ids(
 async def run_scale_case(
     case: ScaleCase,
     temporary_root: Path | None = None,
+    external: ExternalBackend | None = None,
 ) -> dict[str, Any]:
     started = time.monotonic()
     with tempfile.TemporaryDirectory(
@@ -196,11 +251,26 @@ async def run_scale_case(
         database_path = root / "mnema.sqlite"
         database = Database(f"sqlite:///{database_path}")
         database.create_schema()
-        workflow = workflow_for(roots)
+        workflow = external_workflow(roots, external) if external else workflow_for(roots)
         with database.session() as session:
             items = await workflow.discover(session)
             item_ids = [item.id for item in items]
-        await archive_ids(database, workflow, item_ids, case.concurrency)
+        workflow_factory = (
+            (lambda: external_workflow(roots, external)) if external is not None else None
+        )
+        if external is not None and item_ids:
+            await archive_ids(database, workflow, item_ids[:1], 1)
+            await archive_ids(
+                database,
+                workflow,
+                item_ids[1:],
+                case.concurrency,
+                workflow_factory,
+                progress_offset=1,
+                progress_total=len(item_ids),
+            )
+        else:
+            await archive_ids(database, workflow, item_ids, case.concurrency)
 
         with database.session() as session:
             quarantined = session.scalar(
@@ -229,10 +299,30 @@ async def run_scale_case(
 
         with database.engine.begin() as connection:
             connection.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
+        if external:
+            if not isinstance(workflow.backup, KopiaBackup) or not isinstance(
+                workflow.cold,
+                S3EncryptedColdStorage,
+            ):
+                raise RuntimeError("external workflow adapters have an invalid type")
+            snapshot_payload = await workflow.backup._run(
+                "snapshot",
+                "list",
+                "--all",
+                "--json",
+            )
+            local_snapshots = len(json.loads(snapshot_payload or b"[]"))
+            cold_objects = await asyncio.to_thread(s3_object_count, workflow.cold)
+        else:
+            local_snapshots = len(list(roots["backup"].glob("*.snapshot")))
+            cold_objects = len(list(roots["cold"].glob("*.mnema")))
+        if local_snapshots != quarantined or cold_objects != quarantined:
+            raise RuntimeError("snapshot or cold-object count differs from quarantined item count")
         database.close()
         memory = physical_memory_bytes()
         return {
             "mode": case.name,
+            "backend": "kopia-minio" if external else "filesystem-local-cold",
             "files": case.file_count,
             "file_bytes": case.file_size,
             "source_bytes": case.source_bytes,
@@ -246,8 +336,8 @@ async def run_scale_case(
             "database_bytes": database_path.stat().st_size,
             "quarantined": quarantined,
             "audit_events": audit_events,
-            "local_snapshots": len(list(roots["backup"].glob("*.snapshot"))),
-            "cold_objects": len(list(roots["cold"].glob("*.mnema"))),
+            "local_snapshots": local_snapshots,
+            "cold_objects": cold_objects,
             "restore_items_verified": len(samples),
             "restore_copies_verified": restore_copies_verified,
         }
@@ -335,6 +425,18 @@ async def run_failure_case(
 
 async def run(args: argparse.Namespace) -> dict[str, Any]:
     results: dict[str, Any] = {"temporary_data_only": True, "deletion_exercised": False}
+    external = (
+        ExternalBackend(
+            args.kopia_password_file,
+            args.s3_endpoint,
+            args.s3_bucket,
+            args.s3_access_key_file,
+            args.s3_secret_key_file,
+            args.cold_key_file,
+        )
+        if args.backend == "external"
+        else None
+    )
     if args.mode in {"large", "all"}:
         results["large"] = await run_scale_case(
             ScaleCase(
@@ -344,6 +446,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
                 args.concurrency,
             ),
             args.temporary_root,
+            external,
         )
     if args.mode in {"small", "all"}:
         results["small"] = await run_scale_case(
@@ -354,6 +457,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
                 args.concurrency,
             ),
             args.temporary_root,
+            external,
         )
     if args.mode in {"failure", "all"}:
         results["failures"] = [
@@ -368,6 +472,12 @@ def parse_args() -> argparse.Namespace:
         description="Run Mnema archive stress tests using disposable temporary data only."
     )
     parser.add_argument("--mode", choices=("large", "small", "failure", "all"), default="all")
+    parser.add_argument(
+        "--backend",
+        choices=("local", "external"),
+        default="local",
+        help="Use test doubles or real Kopia and S3-compatible storage.",
+    )
     parser.add_argument("--concurrency", type=int, choices=(1, 2), default=1)
     parser.add_argument("--large-bytes", type=int, default=5 * GIB)
     parser.add_argument("--small-files", type=int, default=10_000)
@@ -377,6 +487,12 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help="Existing writable directory under which disposable test directories are created.",
     )
+    parser.add_argument("--kopia-password-file", type=Path)
+    parser.add_argument("--s3-endpoint")
+    parser.add_argument("--s3-bucket", default="mnema-stress")
+    parser.add_argument("--s3-access-key-file", type=Path)
+    parser.add_argument("--s3-secret-key-file", type=Path)
+    parser.add_argument("--cold-key-file", type=Path)
     parser.add_argument(
         "--smoke",
         action="store_true",
@@ -390,6 +506,20 @@ def parse_args() -> argparse.Namespace:
             parser.error("temporary root must be an existing directory")
         if not os.access(args.temporary_root, os.W_OK):
             parser.error("temporary root must be writable")
+    if args.backend == "external":
+        required_files = (
+            args.kopia_password_file,
+            args.s3_access_key_file,
+            args.s3_secret_key_file,
+            args.cold_key_file,
+        )
+        if args.s3_endpoint is None or any(path is None for path in required_files):
+            parser.error("external backend requires endpoint and all credential/key files")
+        parsed_endpoint = urllib.parse.urlsplit(args.s3_endpoint)
+        if parsed_endpoint.scheme not in {"http", "https"} or not parsed_endpoint.hostname:
+            parser.error("S3 endpoint must be an HTTP or HTTPS URL")
+        if any(not path.is_file() for path in required_files):
+            parser.error("external backend credential/key files must exist")
     return args
 
 

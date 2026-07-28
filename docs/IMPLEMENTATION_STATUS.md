@@ -37,6 +37,13 @@ after download, backup write, and encrypted cold upload recovered to quarantine 
 snapshot/object and independently verified restores. These tests used local protocol
 adapters rather than Kopia/MinIO; see `RESOURCE_USAGE.md`.
 
+Isolated real-adapter Pi runs passed one 1 GiB file and 1,000 files at concurrency one
+and two through Kopia 0.23.1 and dedicated MinIO. Exact Kopia snapshot and MinIO object
+counts matched quarantined item counts, and first/last restores passed from both copies.
+Concurrency two reduced the 1,000-file duration from 1,076.620 to 573.858 seconds.
+Mid-upload MinIO restart, real-adapter 5 GiB/10,000-file scale, and physical power loss
+remain unverified.
+
 SMART validation on 2026-07-28:
 
 - Kingston active SSD: passed, 40°C, 2,235 power-on hours.

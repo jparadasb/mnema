@@ -48,3 +48,21 @@ is tested separately because this harness never invokes deletion.
 Default large size is 5 GiB and default small-file count is 10,000. Compare
 `source_larger_than_physical_memory` before claiming a larger-than-RAM result. The JSON
 report includes elapsed time, peak process RSS, SQLite size, receipts, and object counts.
+
+## Real Kopia and MinIO backend
+
+Run the wrapper as root with a dedicated workspace on a filesystem with enough capacity:
+
+```bash
+sudo scripts/run-external-stress.sh /path/to/dedicated-workspace \
+  --mode large --large-bytes 1073741824 --concurrency 1
+sudo scripts/run-external-stress.sh /path/to/dedicated-workspace \
+  --mode small --small-files 1000 --small-bytes 4096 --concurrency 1
+```
+
+The wrapper creates a private Docker network, dedicated MinIO container, random temporary
+credentials, new Kopia repository, new bucket, and generated source data. It mounts no
+Mnema configuration, production database, production MinIO data, or active NAS storage.
+The internal Docker network has no external route. Cleanup removes the container, network,
+credentials, repository, bucket data, and generated files. The supplied workspace itself
+is never recursively removed.

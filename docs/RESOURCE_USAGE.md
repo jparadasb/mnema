@@ -55,3 +55,23 @@ data was automatically removed; the dedicated workspace returned to 4 KiB.
 Still required: repeat larger-than-RAM and 10,000-file measurements through real
 Kopia/MinIO adapters, capture reliable cgroup peaks while `docker stats` remains broken
 on this host, and perform physical power-cut injection.
+
+## Real Kopia and isolated MinIO
+
+Raspberry Pi 5 ARM64 measurements on 2026-07-29 used Kopia 0.23.1 and a dedicated
+MinIO `RELEASE.2025-07-23T15-54-02Z` container on an internal-only Docker network:
+
+- One 1 GiB file, concurrency one: 271.125 seconds and 163,376 KiB peak RSS.
+- 1,000 files of 4 KiB, concurrency one: 1,076.620 seconds and 101,616 KiB peak RSS.
+- 1,000 files of 4 KiB, concurrency two: 573.858 seconds and 108,656 KiB peak RSS.
+
+Both 1,000-file runs produced exactly 1,000 quarantined items, 12,000 audit events,
+1,000 Kopia snapshots, and 1,000 encrypted MinIO objects. Independent restores of the
+first and last items passed from both Kopia and MinIO. The 1 GiB run produced one
+snapshot/object and passed both restores. Test containers mounted no production Mnema
+database, configuration, secrets, active storage, Kopia repository, or MinIO data.
+Temporary credentials, Docker networks, repositories, buckets, and generated data were
+removed after each run.
+
+Still required on the real adapters: 5 GiB larger-than-RAM scale, 10,000 files, MinIO
+restart during active upload, missing-backup fault injection, and physical power loss.
