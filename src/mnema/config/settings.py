@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
+from urllib.parse import urlsplit
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -47,9 +48,14 @@ class Settings(BaseSettings):
     kopia_config_file: Path = Path("/var/lib/mnema/kopia/repository.config")
     use_external_test_storage: bool = False
     s3_endpoint_url: str = "http://minio:9000"
+    s3_provider: Literal["generic", "scaleway"] = "generic"
+    s3_region: str = "us-east-1"
     s3_bucket: str = "mnema-integration"
     s3_access_key_file: Path = Path("/run/secrets/minio_user")
     s3_secret_key_file: Path = Path("/run/secrets/minio_password")
+    cold_storage_transport: Literal["s3", "rclone"] = "s3"
+    rclone_config_file: Path = Path("/run/secrets/rclone.conf")
+    rclone_remote_root: str = "minio:mnema-integration"
     sftpgo_endpoint_url: str = "http://sftpgo:8080"
     sftpgo_api_key_file: Path = Path("/run/secrets/sftpgo_api_key")
     smart_health_file: Path = Path("/var/lib/mnema/smart-health.json")
@@ -61,6 +67,15 @@ class Settings(BaseSettings):
     per_adapter_concurrency: Annotated[int, Field(ge=1, le=2)] = 1
     pause_when_active_disk_free_percent_below: float = 10
     pause_when_backup_disk_free_percent_below: float = 10
+    cloudflare_access_required: bool = False
+    cloudflare_team_domain: str = ""
+    cloudflare_audience: str = ""
+    cloudflare_admin_hostname: str = ""
+    icloud_enabled: bool = False
+    icloud_apple_id: str = ""
+    icloud_library: Literal["PrimarySync"] = "PrimarySync"
+    icloud_session_directory: Path = Path("/var/lib/mnema/icloud-session")
+    icloud_import_root: Path = Path("/data/active/iCloud Photos")
 
     @field_validator(
         "active_root",
@@ -69,9 +84,56 @@ class Settings(BaseSettings):
         "source_root",
         "kopia_repository",
         "kopia_config_file",
+        "rclone_config_file",
+        "icloud_session_directory",
+        "icloud_import_root",
     )
     @classmethod
     def absolute_paths(cls, value: Path) -> Path:
         if not value.is_absolute():
             raise ValueError("storage paths must be absolute")
         return value
+
+    @model_validator(mode="after")
+    def cloudflare_access_is_complete(self) -> Settings:
+        if not self.cloudflare_access_required:
+            return self
+        team = urlsplit(self.cloudflare_team_domain)
+        if (
+            team.scheme != "https"
+            or not team.hostname
+            or not team.hostname.endswith(".cloudflareaccess.com")
+            or team.username is not None
+            or team.password is not None
+            or team.port is not None
+            or team.path not in {"", "/"}
+            or team.query
+            or team.fragment
+        ):
+            raise ValueError("Cloudflare Access requires a valid HTTPS team domain")
+        if not self.cloudflare_audience:
+            raise ValueError("Cloudflare Access audience is required")
+        return self
+
+    @model_validator(mode="after")
+    def icloud_configuration_is_complete(self) -> Settings:
+        if not self.icloud_enabled:
+            return self
+        if not self.icloud_apple_id:
+            raise ValueError("iCloud Photos requires an Apple ID")
+        if not self.icloud_import_root.is_relative_to(self.active_root):
+            raise ValueError("iCloud import root must remain beneath active storage")
+        return self
+
+    @model_validator(mode="after")
+    def scaleway_glacier_configuration_is_safe(self) -> Settings:
+        if self.s3_provider != "scaleway":
+            return self
+        if self.cold_storage_transport != "s3":
+            raise ValueError("Scaleway Glacier requires direct S3 transport")
+        if self.s3_region not in {"fr-par", "nl-ams"}:
+            raise ValueError("Scaleway Glacier region must be fr-par or nl-ams")
+        expected_endpoint = f"https://s3.{self.s3_region}.scw.cloud"
+        if self.s3_endpoint_url != expected_endpoint:
+            raise ValueError(f"Scaleway endpoint must be {expected_endpoint}")
+        return self

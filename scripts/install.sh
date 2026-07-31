@@ -5,6 +5,7 @@ umask 077
 readonly INSTALL_ROOT="/opt/mnema"
 readonly DATA_ROOT="/var/lib/mnema"
 readonly SECRET_ROOT="/etc/mnema/secrets"
+readonly ICLOUD_SESSION_ROOT="/etc/mnema/icloud-session"
 
 fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 info() { printf '%s\n' "$*"; }
@@ -63,6 +64,10 @@ lsblk --json --bytes --output NAME,PATH,TYPE,MODEL,SERIAL,SIZE,FSTYPE,UUID,MOUNT
   fail "active storage path contains unsupported characters"
 [[ "${MNEMA_BACKUP_ROOT}" != *$'\n'* && "${MNEMA_BACKUP_ROOT}" != *\"* ]] ||
   fail "backup storage path contains unsupported characters"
+[[ "${MNEMA_ACTIVE_ROOT}" != *[[:space:]\\]* ]] ||
+  fail "active storage path cannot contain whitespace or backslashes"
+[[ "${MNEMA_BACKUP_ROOT}" != *[[:space:]\\]* ]] ||
+  fail "backup storage path cannot contain whitespace or backslashes"
 active_source="$(findmnt -n -o SOURCE --target "${MNEMA_ACTIVE_ROOT}")"
 backup_source="$(findmnt -n -o SOURCE --target "${MNEMA_BACKUP_ROOT}")"
 active_uuid="$(findmnt -n -o UUID --target "${MNEMA_ACTIVE_ROOT}")"
@@ -97,6 +102,7 @@ install -d -o mnema -g mnema -m 0750 \
 install -d -o mnema -g mnema -m 0750 "${MNEMA_ACTIVE_ROOT}/.mnema-staging"
 install -d -o mnema -g mnema -m 0750 "${MNEMA_SOURCE_ROOT:-${DATA_ROOT}/test-source}"
 install -d -o root -g mnema -m 0750 "${SECRET_ROOT}"
+install -d -o mnema -g mnema -m 0700 "${ICLOUD_SESSION_ROOT}"
 
 script_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 cp -a \
@@ -111,6 +117,9 @@ cp -a \
   "${INSTALL_ROOT}/"
 ln -sfn "${SECRET_ROOT}" "${INSTALL_ROOT}/secrets"
 install -m 0644 "${script_root}/deploy/systemd/mnema.service" /etc/systemd/system/mnema.service
+"${INSTALL_ROOT}/scripts/apply-storage-gates.sh" \
+  "${MNEMA_ACTIVE_ROOT}" \
+  "${MNEMA_BACKUP_ROOT}"
 cat >/etc/systemd/system/mnema-smart.service <<EOF
 [Unit]
 Description=Mnema SMART health collector
@@ -153,6 +162,17 @@ fi
 if [[ ! -e "${SECRET_ROOT}/minio_password" ]]; then
   openssl rand -base64 48 >"${SECRET_ROOT}/minio_password"
 fi
+if [[ ! -e "${SECRET_ROOT}/rclone.conf" ]]; then
+  {
+    printf '[minio]\n'
+    printf 'type = s3\n'
+    printf 'provider = Minio\n'
+    printf 'access_key_id = %s\n' "$(tr -d '\n' <"${SECRET_ROOT}/minio_user")"
+    printf 'secret_access_key = %s\n' "$(tr -d '\n' <"${SECRET_ROOT}/minio_password")"
+    printf 'endpoint = http://minio:9000\n'
+    printf 'acl = private\n'
+  } >"${SECRET_ROOT}/rclone.conf"
+fi
 if [[ ! -e "${SECRET_ROOT}/sftpgo_admin_password" ]]; then
   openssl rand -base64 48 >"${SECRET_ROOT}/sftpgo_admin_password"
 fi
@@ -179,18 +199,35 @@ MNEMA_HOST_CONFIG_ROOT=${DATA_ROOT}
 MNEMA_HOST_MINIO_ROOT=${DATA_ROOT}/minio
 MNEMA_HOST_SFTPGO_DATA_ROOT=${DATA_ROOT}/sftpgo-data
 MNEMA_HOST_SFTPGO_HOME_ROOT=${DATA_ROOT}/sftpgo-home
+MNEMA_HOST_ICLOUD_SESSION_ROOT=${ICLOUD_SESSION_ROOT}
 MNEMA_SECRET_KEY_FILE=/run/secrets/mnema_secret_key
 MNEMA_COLD_ENCRYPTION_KEY_FILE=/run/secrets/mnema_cold_key
 MNEMA_KOPIA_PASSWORD_FILE=/run/secrets/kopia_password
 MNEMA_KOPIA_REPOSITORY=/data/backup/kopia-repository
 MNEMA_KOPIA_CONFIG_FILE=/var/lib/mnema/kopia/repository.config
 MNEMA_USE_EXTERNAL_TEST_STORAGE=true
+MNEMA_S3_PROVIDER=generic
+MNEMA_S3_REGION=us-east-1
 MNEMA_S3_ENDPOINT_URL=http://minio:9000
 MNEMA_S3_BUCKET=mnema-integration
 MNEMA_S3_ACCESS_KEY_FILE=/run/secrets/minio_user
 MNEMA_S3_SECRET_KEY_FILE=/run/secrets/minio_password
+MNEMA_COLD_STORAGE_TRANSPORT=s3
+MNEMA_RCLONE_CONFIG_FILE=/run/secrets/rclone.conf
+MNEMA_RCLONE_REMOTE_ROOT=minio:mnema-integration
 MNEMA_SMART_HEALTH_FILE=/var/lib/mnema/smart-health.json
 MNEMA_REQUIRE_SMART_HEALTH=true
+MNEMA_LOCAL_BIND=127.0.0.1
+MNEMA_SFTP_BIND=0.0.0.0
+MNEMA_CLOUDFLARE_ACCESS_REQUIRED=false
+MNEMA_CLOUDFLARE_TEAM_DOMAIN=
+MNEMA_CLOUDFLARE_AUDIENCE=
+MNEMA_CLOUDFLARE_ADMIN_HOSTNAME=
+MNEMA_ICLOUD_ENABLED=false
+MNEMA_ICLOUD_APPLE_ID=
+MNEMA_ICLOUD_LIBRARY=PrimarySync
+MNEMA_ICLOUD_SESSION_DIRECTORY=/var/lib/mnema/icloud-session
+MNEMA_ICLOUD_IMPORT_ROOT=/data/active/iCloud Photos
 COMPOSE_PROFILES=integration
 MNEMA_GLOBAL_DELETION_ENABLED=false
 MNEMA_SAFETY_LOCK=true
@@ -228,7 +265,8 @@ chmod 0640 "${SECRET_ROOT}/sftpgo_api_key"
 chown root:mnema "${SECRET_ROOT}/sftpgo_api_key"
 
 host_address="$(hostname -I | awk '{print $1}')"
-info "Mnema installed. Setup URL: http://${host_address:-127.0.0.1}:8080/setup"
+info "Mnema installed. Local setup URL: http://127.0.0.1:8080/setup"
+info "Remote setup: ssh -L 8080:127.0.0.1:8080 ${SUDO_USER:-user}@${host_address:-host}"
 info "One-time onboarding token: ${onboarding_token}"
 info "SFTP: ${host_address:-127.0.0.1}:2022 user=${sftpgo_user}"
 info "SFTP password stored at ${SECRET_ROOT}/sftpgo_user_password"

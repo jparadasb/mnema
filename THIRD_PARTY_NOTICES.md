@@ -7,12 +7,14 @@ Declared direct dependencies:
 - boto3 1.39.14 and botocore — Apache-2.0
 - cryptography 45.0.5 — Apache-2.0 OR BSD-3-Clause
 - FastAPI 0.116.1 — MIT
+- icloudpd 1.32.3 — MIT
 - itsdangerous 2.2.0 — BSD-3-Clause
 - Jinja2 3.1.6 — BSD-3-Clause
 - Playwright 1.61.0 — Apache-2.0 (development and E2E only)
 - Pydantic 2.11.7 and pydantic-settings 2.10.1 — MIT
 - python-multipart 0.0.20 — Apache-2.0
 - PyYAML 6.0.2 — MIT
+- PyJWT 2.13.0 — MIT
 - pyee 13.0.1 — MIT (Playwright transitive dependency)
 - SQLAlchemy 2.0.41 — MIT
 - Starlette 0.47.3 — BSD-3-Clause

@@ -11,7 +11,8 @@ WORKDIR /app
 RUN groupadd --system --gid 10001 mnema \
  && useradd --system --uid 10001 --gid mnema --home /nonexistent --shell /usr/sbin/nologin mnema
 RUN apt-get update \
- && apt-get install --yes --no-install-recommends ca-certificates curl gnupg rclone \
+ && apt-get install --yes --no-install-recommends \
+      ca-certificates curl gnupg rclone=1.60.1+dfsg-2+b5 \
  && curl --fail --silent --show-error https://kopia.io/signing-key --output /tmp/kopia-key.asc \
  && test "$(gpg --show-keys --with-colons /tmp/kopia-key.asc | grep '^fpr:' | head -n 1 | cut -d: -f10)" = "7FB99DFD47809F0D5339D7D92273699AFD56A556" \
  && gpg --batch --yes --dearmor --output /etc/apt/keyrings/kopia-keyring.gpg /tmp/kopia-key.asc \

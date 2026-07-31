@@ -13,6 +13,7 @@ from mnema.adapters.sources.local import SourceChangedError
 from mnema.config import DeletionLimits, SourcePolicy
 from mnema.domain.source import SourceAdapter, SourceObject
 from mnema.domain.states import ArchiveState
+from mnema.domain.storage import resolve_beneath
 from mnema.jobs.models import ArchiveItem, utcnow
 from mnema.jobs.state_service import transition_item
 from mnema.policies.deletion import (
@@ -38,6 +39,8 @@ class ArchiveWorkflow:
         active_root: Path,
         staging_root: Path,
         policy: SourcePolicy,
+        source_provider: str = "local_test",
+        source_is_active: bool = False,
     ) -> None:
         self.source = source
         self.backup = backup
@@ -45,6 +48,8 @@ class ArchiveWorkflow:
         self.active_root = active_root
         self.staging_root = staging_root
         self.policy = policy
+        self.source_provider = source_provider
+        self.source_is_active = source_is_active
 
     async def discover(self, session: Session) -> list[ArchiveItem]:
         cursor: str | None = None
@@ -54,7 +59,7 @@ class ArchiveWorkflow:
             for source_object in page.objects:
                 item = session.scalar(
                     select(ArchiveItem).where(
-                        ArchiveItem.source_provider == "local_test",
+                        ArchiveItem.source_provider == self.source_provider,
                         ArchiveItem.source_identifier == source_object.source_id,
                     )
                 )
@@ -70,16 +75,36 @@ class ArchiveWorkflow:
                         actor="scanner",
                         details={"policy_reasons": decision.reasons},
                     )
+                elif self._source_changed(item, source_object):
+                    transition_item(
+                        session,
+                        item,
+                        ArchiveState.SOURCE_CHANGED,
+                        actor="scanner",
+                        details={"reason": "source metadata changed"},
+                    )
+                    item.original_path = source_object.relative_path
+                    item.original_size = source_object.size
+                    item.original_modified_at = source_object.modified_at
+                    item.source_version = source_object.version
+                elif item.state == ArchiveState.INELIGIBLE:
+                    decision = evaluate_policy(source_object, self.policy)
+                    transition_item(
+                        session,
+                        item,
+                        ArchiveState.ELIGIBLE if decision.eligible else ArchiveState.INELIGIBLE,
+                        actor="scanner",
+                        details={"policy_reasons": decision.reasons},
+                    )
                 found.append(item)
             cursor = page.next_cursor
             if cursor is None:
                 break
         return found
 
-    @staticmethod
-    def _new_item(source: SourceObject) -> ArchiveItem:
+    def _new_item(self, source: SourceObject) -> ArchiveItem:
         return ArchiveItem(
-            source_provider="local_test",
+            source_provider=self.source_provider,
             source_identifier=source.source_id,
             original_path=source.relative_path,
             original_size=source.size,
@@ -89,7 +114,12 @@ class ArchiveWorkflow:
         )
 
     async def archive(self, session: Session, item: ArchiveItem) -> ArchiveItem:
-        if item.state == ArchiveState.ELIGIBLE:
+        if item.state in {
+            ArchiveState.ELIGIBLE,
+            ArchiveState.SOURCE_CHANGED,
+            ArchiveState.FAILED_RETRYABLE,
+            ArchiveState.MANUAL_REVIEW,
+        }:
             transition_item(session, item, ArchiveState.QUEUED, actor="worker")
         if item.state == ArchiveState.QUEUED:
             transition_item(session, item, ArchiveState.DOWNLOADING, actor="worker")
@@ -121,22 +151,35 @@ class ArchiveWorkflow:
             session.commit()
         if item.state == ArchiveState.LOCAL_VERIFIED:
             assert item.plaintext_sha256 is not None
-            commit = commit_staged(
-                staged,
-                self.active_root,
-                item.original_path,
-                item.plaintext_sha256,
-                item.original_size,
-                modified_timestamp=item.original_modified_at.timestamp(),
-            )
-            item.nas_path = str(commit.path)
+            if self.source_is_active:
+                active = resolve_beneath(self.active_root, item.original_path, must_exist=True)
+                if active.is_symlink() or not active.is_file():
+                    raise VerificationFailure("active source must be a regular non-symlink file")
+                if active.stat().st_size != item.original_size:
+                    raise VerificationFailure("active source size changed before adoption")
+                if sha256_file(active) != item.plaintext_sha256:
+                    raise VerificationFailure("active source hash changed before adoption")
+                staged.unlink()
+                item.nas_path = str(active)
+                transformed_from = None
+            else:
+                commit = commit_staged(
+                    staged,
+                    self.active_root,
+                    item.original_path,
+                    item.plaintext_sha256,
+                    item.original_size,
+                    modified_timestamp=item.original_modified_at.timestamp(),
+                )
+                item.nas_path = str(commit.path)
+                transformed_from = commit.transformed_from
             item.nas_verified_at = utcnow()
             transition_item(
                 session,
                 item,
                 ArchiveState.LOCAL_COMMITTED,
                 actor="worker",
-                details={"filename_transformed_from": commit.transformed_from},
+                details={"filename_transformed_from": transformed_from},
             )
             session.commit()
         if item.state == ArchiveState.LOCAL_COMMITTED:
@@ -179,6 +222,13 @@ class ArchiveWorkflow:
             transition_item(session, item, ArchiveState.COLD_VERIFIED, actor="worker")
             session.commit()
         if item.state == ArchiveState.COLD_VERIFIED:
+            transition_item(session, item, ArchiveState.COLD_ARCHIVE_PENDING, actor="worker")
+            session.commit()
+        if item.state == ArchiveState.COLD_ARCHIVE_PENDING:
+            await self.cold.archive_verified(self._cold_receipt(item))
+            transition_item(session, item, ArchiveState.COLD_ARCHIVED, actor="worker")
+            session.commit()
+        if item.state == ArchiveState.COLD_ARCHIVED:
             item.quarantine_expires_at = utcnow() + timedelta(days=self.policy.quarantine_days)
             transition_item(session, item, ArchiveState.QUARANTINED, actor="worker")
             session.commit()
@@ -275,6 +325,9 @@ class ArchiveWorkflow:
         item: ArchiveItem,
         decision: GateDecision,
     ) -> None:
+        capabilities = await self.source.capabilities()
+        if not capabilities.can_delete:
+            raise PermissionError(f"{self.source_provider} source deletion is unavailable")
         if not decision.allowed:
             raise PermissionError("; ".join(decision.blockers))
         current = await self.source.stat(item.source_identifier)
@@ -335,6 +388,10 @@ class ArchiveWorkflow:
             and current_modified == stored_modified
             and current.version == item.source_version
         )
+
+    @staticmethod
+    def _source_changed(item: ArchiveItem, current: SourceObject) -> bool:
+        return not ArchiveWorkflow._source_matches(item, current)
 
     @staticmethod
     def _record_cold_receipt(item: ArchiveItem, receipt: ColdReceipt) -> None:

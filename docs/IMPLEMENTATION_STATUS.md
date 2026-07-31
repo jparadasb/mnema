@@ -2,23 +2,43 @@
 
 ## Implemented
 
-Repository/docs, typed source protocol, local source, central state graph, SQLAlchemy schema, audit transitions, leased queue, policy and deletion gate, safe path validation, streaming copy/hash/fsync/atomic commit, Kopia versioned backup, AES-GCM cold encryption, MinIO S3 storage, independent restore verification, quarantine, guarded test deletion, fail-closed startup recovery, CLI, web shell, Compose, systemd, and installer refusal checks.
+Repository/docs, typed source protocol, local and read-only iCloud Photos sources, central
+state graph, SQLAlchemy schema, audit transitions, leased queue, policy and deletion gate,
+safe path validation, streaming copy/hash/fsync/atomic commit, Kopia versioned backup,
+AES-GCM cold encryption, MinIO S3 storage, independent restore verification, quarantine,
+guarded test deletion, fail-closed startup recovery, CLI, web shell, Compose, systemd, and
+installer refusal checks.
 
 ## Mocked or incomplete
 
 - Fast tests use filesystem/local test doubles; dedicated adapter unit tests cover Kopia command construction and encrypted S3 behavior.
-- iCloud classes intentionally do not work.
+- iCloud Photos uses pinned `icloudpd` copy mode with interactive session authentication,
+  manual preview/sync, and a daily timer. CI uses synthetic imports; live Apple behavior
+  remains unclaimed until operator validation with a dedicated account.
+- iCloud Drive, Shared Library, multi-account operation, and iCloud deletion remain absent.
 - SFTPGo v2 API provisioning client and installer bootstrap create a separate service administrator, scoped API key, and NAS user. Real SFTP password authentication and byte-identical upload/download were validated on the Pi.
-- OpenMediaVault/rclone adapters absent.
-- Cloudflare Access JWT validation absent.
-- Offline installer, safe update, uninstall, config restore, and admin reset are explicit non-success stubs.
+- OpenMediaVault adapter absent. Selectable rclone cold transport exists.
+- Scaleway direct-S3 configuration, post-verification Glacier transition, multipart
+  archive copy, and asynchronous restore request/status handling are implemented with
+  provider-independent fakes; live Scaleway credentials have not been used.
+- Cloudflare Access JWT validation protects a dedicated public web service. Existing-tunnel
+  configuration is available through the appliance CLI; Cloudflare account provisioning
+  remains manual. SFTPGo stays local-only.
+- Typed appliance configuration, lifecycle control, configuration backup/restore,
+  verified local-archive update, rollback, and non-destructive runtime uninstall are
+  available through the host CLI. Offline release acquisition and admin reset remain
+  explicit non-success paths.
 - Setup persists administrator, separated storage, default fail-closed policy, local-source availability, and MinIO availability. Authenticated pages support policy edits, source preview/archive, receipt tables, Kopia/remote restore tests, emergency pause, jobs, audit, storage, and diagnostics.
 - Playwright drives setup, login, policy editing, source preview, archive, local restore, remote restore, emergency pause, and audit verification at a 390 x 844 mobile viewport.
 - No production deletion.
 
 ## Hardware validation
 
-Native Python validation passed on Raspberry Pi 5 Model B Rev 1.0, Debian 13 ARM64, and Python 3.13.5: Ruff, strict mypy, local vertical proof, browser E2E, crash injection, and synthetic resource measurements. Current x86_64 validation passes all 43 tests, including the complete browser and stress-harness journeys, with 77% statement coverage. See `RESOURCE_USAGE.md`.
+Native Python validation passed on Raspberry Pi 5 Model B Rev 1.0, Debian 13 ARM64, and
+Python 3.13.5: Ruff, strict mypy, local vertical proof, browser E2E, crash injection, and
+synthetic resource measurements. Current x86_64 validation passes all 46 tests, including
+the complete browser and stress-harness journeys, with 77% statement coverage. See
+`RESOURCE_USAGE.md`.
 
 Radxa Penta SATA HAT enumeration passes after enabling external PCIe and the JMB585 32-bit DMA overlay. Controller negotiated PCIe Gen 2 x1. Two SSDs were identified independently, formatted only after explicit confirmation, and mounted using UUIDs:
 
@@ -50,8 +70,16 @@ Concurrency two reduced the 1,000-file duration from 1,076.620 to 573.858 second
 A 256 MiB multipart upload interrupted by stopping dedicated MinIO remained
 `COLD_UPLOAD_PENDING`; a new process reconciled it to `FAILED_RETRYABLE`, retried it to
 quarantine, verified both restores, and found one snapshot, one object, and zero incomplete
-multipart uploads. Real-adapter 5 GiB/10,000-file scale and physical power loss remain
-unverified.
+multipart uploads. A real 5 GiB file, larger than physical RAM, completed through Kopia
+and MinIO with both restores verified, one snapshot/object, and 164,464 KiB peak process
+RSS. Real-adapter 10,000-file scale and physical power loss remain unverified.
+
+An isolated 8 MiB rclone/MinIO proof produced one encrypted remote object, returned the
+same receipt on idempotent retry, and passed independent copy-back/decrypt/SHA-256
+verification. Idle production Compose processes used 292,306,944 bytes of proportional
+anonymous/shared resident memory, excluding file-backed pages, below the 1.2 GiB target.
+Compose bind mounts now prohibit host-path creation. An isolated negative ARM64 test
+refused a missing active-storage source and left that host path absent.
 
 SMART validation on 2026-07-28:
 

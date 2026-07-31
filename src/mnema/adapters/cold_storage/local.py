@@ -47,6 +47,9 @@ class LocalEncryptedColdStorage:
             await self.restore(receipt, restored)
             return sha256_hex(restored) == expected_sha256
 
+    async def archive_verified(self, receipt: ColdReceipt) -> None:
+        del receipt
+
     async def restore(self, receipt: ColdReceipt, destination: Path) -> None:
         decrypt_file(self.root / receipt.object_identifier, destination, self.key)
         await asyncio.sleep(0)

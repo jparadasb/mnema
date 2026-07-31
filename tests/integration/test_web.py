@@ -3,11 +3,15 @@ from pathlib import Path
 
 import httpx
 import pytest
+from sqlalchemy import select
 
+from mnema.adapters.cold_storage import ColdRestorePending
 from mnema.config import Settings, SourcePolicy
 from mnema.domain.factory import build_local_workflow
-from mnema.jobs.models import RuntimeSetting
+from mnema.domain.states import ArchiveState
+from mnema.jobs.models import ArchiveItem, AuditEvent, RuntimeSetting
 from mnema.security.auth import hash_password
+from mnema.web import app as web_app_module
 from mnema.web.app import create_app
 
 
@@ -197,3 +201,64 @@ async def test_web_local_and_remote_restore_workflow(tmp_path: Path) -> None:
             restored = session.get(type(item), item_id)
             assert restored and restored.restore_test_status
             assert restored.restore_test_status.startswith("remote:verified:")
+
+
+@pytest.mark.asyncio
+async def test_web_records_pending_glacier_restore_without_blocking(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, application = authenticated_application(tmp_path)
+    with application.state.database.session() as session:
+        item = ArchiveItem(
+            source_provider="test",
+            source_identifier="glacier-proof",
+            original_path="glacier-proof",
+            original_size=1,
+            original_modified_at=datetime.now(UTC),
+            source_version="v1",
+            state=ArchiveState.ARCHIVED,
+            plaintext_sha256="0" * 64,
+            remote_provider="scaleway-glacier",
+            remote_bucket="archive",
+            remote_object_identifier="mnema/item-1.mnema",
+            encryption_mode="AES-256-GCM",
+            remote_size=2,
+        )
+        session.add(item)
+        session.flush()
+        item_id = item.id
+
+    class PendingWorkflow:
+        async def restore_remote(self, item: ArchiveItem, destination: Path) -> bool:
+            del item, destination
+            raise ColdRestorePending("restore pending", requested=True)
+
+    monkeypatch.setattr(
+        web_app_module,
+        "build_local_workflow",
+        lambda settings, policy: PendingWorkflow(),
+    )
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=application),
+        base_url="http://test",
+    ) as client:
+        await login(client)
+        restores = await client.get("/restores")
+        response = await client.post(
+            f"/restores/{item_id}/remote",
+            data={"csrf": csrf_from(restores)},
+        )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/restores?pending=1"
+    with application.state.database.session() as session:
+        restored = session.get(ArchiveItem, item_id)
+        event = session.scalars(
+            select(AuditEvent).where(AuditEvent.archive_item_id == item_id)
+        ).one()
+        assert restored
+        assert restored.restore_test_status.startswith("remote:pending:")
+        assert event.event_type == "restore_requested"
+        assert event.details["request_started"] is True

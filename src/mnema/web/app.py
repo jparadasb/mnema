@@ -14,6 +14,7 @@ from sqlalchemy import func, select
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.staticfiles import StaticFiles
 
+from mnema.adapters.cold_storage import ColdRestorePending
 from mnema.adapters.nas.sftpgo import SFTPGoAPIClient
 from mnema.config import Settings
 from mnema.config.settings import SourcePolicy
@@ -25,6 +26,11 @@ from mnema.jobs import Database
 from mnema.jobs.models import ArchiveItem, AuditEvent, Job, RuntimeSetting
 from mnema.policies import evaluate_policy
 from mnema.security.auth import csrf_token, hash_password, verify_password
+from mnema.security.cloudflare import (
+    AccessTokenValidator,
+    CloudflareAccessMiddleware,
+    CloudflareAccessValidator,
+)
 from mnema.web.i18n import strings
 
 PAGES = (
@@ -77,7 +83,11 @@ def _secret(settings: Settings) -> str:
     return os.getenv("MNEMA_SECRET_KEY", secrets.token_urlsafe(48))
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    *,
+    cloudflare_validator: AccessTokenValidator | None = None,
+) -> FastAPI:
     settings = settings or Settings()
     database = Database(settings.database_url)
     database.create_schema()
@@ -103,6 +113,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         https_only=os.getenv("MNEMA_SECURE_COOKIES", "0") == "1",
     )
     app.add_middleware(SecurityHeadersMiddleware)
+    if settings.cloudflare_access_required:
+        validator = cloudflare_validator or CloudflareAccessValidator(
+            settings.cloudflare_team_domain,
+            settings.cloudflare_audience,
+        )
+        app.add_middleware(CloudflareAccessMiddleware, validator=validator)
 
     def context(request: Request, **extra: Any) -> dict[str, Any]:
         language = request.query_params.get("lang", "en")
@@ -378,6 +394,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     ArchiveState.COLD_UPLOAD_PENDING,
                     ArchiveState.COLD_UPLOADED,
                     ArchiveState.COLD_VERIFIED,
+                    ArchiveState.COLD_ARCHIVE_PENDING,
+                    ArchiveState.COLD_ARCHIVED,
                 }:
                     await workflow.archive(session, item)
         return RedirectResponse("/archive", status_code=303)
@@ -406,7 +424,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if copy_name == "local":
                 verified = await workflow.restore_local(item, destination)
             else:
-                verified = await workflow.restore_remote(item, destination)
+                try:
+                    verified = await workflow.restore_remote(item, destination)
+                except ColdRestorePending as error:
+                    item.restore_test_status = f"remote:pending:{datetime.now(UTC).isoformat()}"
+                    session.add(
+                        AuditEvent(
+                            archive_item_id=item.id,
+                            event_type="restore_requested",
+                            from_state=item.state,
+                            to_state=item.state,
+                            actor="administrator",
+                            details={
+                                "copy": "remote",
+                                "pending": True,
+                                "request_started": error.requested,
+                            },
+                        )
+                    )
+                    return RedirectResponse("/restores?pending=1", status_code=303)
             item.restore_test_status = (
                 f"{copy_name}:verified:{datetime.now(UTC).isoformat()}"
                 if verified

@@ -60,6 +60,8 @@ sudo scripts/run-external-stress.sh /path/to/dedicated-workspace \
   --mode small --small-files 1000 --small-bytes 4096 --concurrency 1
 sudo scripts/run-external-stress.sh /path/to/dedicated-workspace \
   --minio-restart-test --fault-bytes 268435456
+sudo scripts/run-external-stress.sh /path/to/dedicated-workspace \
+  --rclone-proof --bytes 8388608
 ```
 
 The wrapper creates a private Docker network, dedicated MinIO container, random temporary
@@ -67,7 +69,13 @@ credentials, new Kopia repository, new bucket, and generated source data. It mou
 Mnema configuration, production database, production MinIO data, or active NAS storage.
 The internal Docker network has no external route. Cleanup removes the container, network,
 credentials, repository, bucket data, and generated files. The supplied workspace itself
-is never recursively removed.
+is never recursively removed. `TMPDIR` points inside that workspace, preventing encrypted
+intermediate files from consuming the host system disk.
+
+The rclone proof uses a generated configuration containing only random disposable MinIO
+credentials. It uploads the client-side encrypted object twice, requires one remote
+object and an identical receipt, then copies back, decrypts, and verifies plaintext
+SHA-256.
 
 The restart test waits until MinIO has active multipart data, stops MinIO, requires the
 archive attempt to persist `COLD_UPLOAD_PENDING`, then starts MinIO and a new Mnema

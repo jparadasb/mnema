@@ -12,6 +12,7 @@ RETRY_AFTER_RESTART = frozenset(
         ArchiveState.DOWNLOADING,
         ArchiveState.LOCAL_BACKUP_PENDING,
         ArchiveState.COLD_UPLOAD_PENDING,
+        ArchiveState.COLD_ARCHIVE_PENDING,
         ArchiveState.RESTORING,
     }
 )

@@ -62,13 +62,15 @@ Raspberry Pi 5 ARM64 measurements on 2026-07-28 used Kopia 0.23.1 and a dedicate
 MinIO `RELEASE.2025-07-23T15-54-02Z` container on an internal-only Docker network:
 
 - One 1 GiB file, concurrency one: 271.125 seconds and 163,376 KiB peak RSS.
+- One 5 GiB file, concurrency one: 1,401.373 seconds and 164,464 KiB peak RSS.
 - 1,000 files of 4 KiB, concurrency one: 1,076.620 seconds and 101,616 KiB peak RSS.
 - 1,000 files of 4 KiB, concurrency two: 573.858 seconds and 108,656 KiB peak RSS.
 
 Both 1,000-file runs produced exactly 1,000 quarantined items, 12,000 audit events,
 1,000 Kopia snapshots, and 1,000 encrypted MinIO objects. Independent restores of the
-first and last items passed from both Kopia and MinIO. The 1 GiB run produced one
-snapshot/object and passed both restores. Test containers mounted no production Mnema
+first and last items passed from both Kopia and MinIO. The 1 GiB and 5 GiB runs each
+produced one snapshot/object and passed both restores. The 5 GiB source exceeded the
+Pi's measured 4,177,936,384 bytes of physical RAM. Test containers mounted no production Mnema
 database, configuration, secrets, active storage, Kopia repository, or MinIO data.
 Temporary credentials, Docker networks, repositories, buckets, and generated data were
 removed after each run.
@@ -81,5 +83,11 @@ object, zero incomplete multipart uploads, 21 audit events, healthy SQLite integ
 verified local and remote restores. Isolated missing-backup worker startup also failed
 closed with deletion disabled and the safety lock enabled.
 
-Still required on the real adapters: 5 GiB larger-than-RAM scale, 10,000 files, and
-physical power loss.
+An idle-stack measurement used Docker cgroup membership and
+`/proc/<pid>/smaps_rollup` because this Pi kernel does not enable the memory cgroup
+controller. Proportional anonymous and shared resident memory totaled 292,306,944 bytes
+across MinIO, SFTPGo, web, and worker, excluding 97,124,352 bytes of proportional
+file-backed pages. This is below the 1.2 GiB target. Process-level peak history is
+unavailable without the memory controller.
+
+Still required on the real adapters: 10,000 files and physical power loss.

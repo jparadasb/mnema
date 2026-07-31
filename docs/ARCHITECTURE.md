@@ -9,11 +9,19 @@ Mnema owns policy, state, verification, safety, restore orchestration, health, a
 ## Components
 
 - **API/web process:** FastAPI, Jinja2, HTMX-compatible HTML, session/CSRF/CSP boundary.
+- **Public API/web process:** optional unexposed Compose service validates Cloudflare
+  Access JWT signature, issuer, audience, expiry, issue time, and subject before the
+  normal session/CSRF boundary. Local emergency web remains a separate service.
 - **Worker:** leases durable jobs, runs at concurrency one by default, executes idempotent workflow steps.
 - **SQLite:** archive items, receipts, jobs, worker heartbeats, settings, and append-only audit events. WAL mode and foreign keys enabled.
-- **Mnema Bridge:** source protocol plus local test adapter. iCloud classes fail with `NotImplementedError`.
+- **Mnema Bridge:** source protocol, local test adapter, and read-only iCloud Photos
+  importer. `icloudpd` copies originals into a protected active namespace; Mnema then
+  adopts, hashes, backs up, encrypts, and restore-verifies them.
 - **Mnema Vault:** active storage. Writes use `.partial`, streaming SHA-256, fsync, atomic replace, and destination-directory fsync.
-- **Mnema Archive:** Kopia backup and encrypted S3-compatible cold copy.
+- **Mnema Archive:** Kopia backup and client-side encrypted cold copy transported through
+  direct S3 or selectable rclone process boundary. Scaleway mode verifies the Standard
+  object before an idempotent, independently observed transition to Glacier; retrieval
+  uses the provider's asynchronous restore operation.
 - **Mnema Guard:** pure deletion prerequisites plus immediate source revalidation and transactional state changes.
 
 ## Archive flow
@@ -26,8 +34,9 @@ Mnema owns policy, state, verification, safety, restore orchestration, health, a
 6. Active copy is independently hashed.
 7. Kopia creates snapshot; restore-to-temporary-file verification must match plaintext hash.
 8. Cold adapter encrypts content with authenticated encryption, uploads deterministic object key, downloads/decrypts to a temporary file, and verifies plaintext hash.
-9. Item enters quarantine.
-10. Guard checks every receipt, health condition, pause, device separation, limits, quarantine, and current source metadata.
+9. Provider-specific archival runs only after verification; Scaleway must report `GLACIER`.
+10. Item enters quarantine.
+11. Guard checks every receipt, health condition, pause, device separation, limits, quarantine, and current source metadata.
 11. Test-only deletion uses expected version, then confirms absence. Ambiguity enters manual review.
 12. Tombstone and audit history remain permanent.
 
@@ -47,7 +56,11 @@ Jobs use `available_at`, `lease_owner`, `lease_expires_at`, attempts, maximum at
 
 - Untrusted: source filenames/content, browser requests, remote metadata, adapter output, environment variables.
 - Privileged host installer: user creation, directories, systemd, Docker. It validates before mutation.
-- Containers receive only required mounts. No Docker socket. Active storage is mounted into SFTPGo; backup/config/secrets are not.
+- Containers receive only required mounts. No Docker socket. Active storage is mounted
+  into SFTPGo; backup/config/secrets are not. Bind mounts set
+  `create_host_path: false`, so a missing UUID mount cannot silently become a directory
+  on the system disk. Installer also adds `RequiresMountsFor` gates to Docker and Mnema
+  systemd units, plus explicit mountpoint checks before Compose starts.
 - Secrets are files or runtime environment values outside source control.
 
 ## Startup and power recovery
@@ -60,4 +73,7 @@ Server-rendered, mobile-first pages provide setup, status, policy preview, queue
 
 ## Deployment
 
-One image runs `mnema web` or `mnema worker`. Compose includes Mnema, SFTPGo, MinIO test profile, and optional cloudflared profile. Production expects host-managed UUID mounts. systemd supervises Compose.
+One image runs `mnema web` or `mnema worker`. A host CLI owns typed desired state,
+atomic configuration, lifecycle, backup/restore, update, and rollback. Compose includes
+Mnema, SFTPGo, MinIO test profile, and optional cloudflared/public-web profile.
+Production expects host-managed UUID mounts. systemd supervises Compose.

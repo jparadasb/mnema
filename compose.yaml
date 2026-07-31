@@ -7,13 +7,69 @@ services:
     command: ["web", "--host", "0.0.0.0", "--port", "8080"]
     restart: unless-stopped
     env_file: [.env]
-    ports: ["8080:8080"]
+    ports: ["${MNEMA_LOCAL_BIND:-127.0.0.1}:8080:8080"]
     volumes:
-      - ${MNEMA_HOST_CONFIG_ROOT:-./data/config}:/var/lib/mnema
-      - ${MNEMA_HOST_ACTIVE_ROOT:-./data/active}:/data/active
-      - ${MNEMA_HOST_BACKUP_ROOT:-./data/backup}:/data/backup
-      - ${MNEMA_HOST_SOURCE_ROOT:-./data/test-source}:/data/test-source:ro
-      - ./secrets:/run/secrets:ro
+      - type: bind
+        source: ${MNEMA_HOST_CONFIG_ROOT:-./data/config}
+        target: /var/lib/mnema
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${MNEMA_HOST_ACTIVE_ROOT:-./data/active}
+        target: /data/active
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${MNEMA_HOST_BACKUP_ROOT:-./data/backup}
+        target: /data/backup
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${MNEMA_HOST_SOURCE_ROOT:-./data/test-source}
+        target: /data/test-source
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ./secrets
+        target: /run/secrets
+        read_only: true
+        bind: {create_host_path: false}
+    read_only: true
+    tmpfs: ["/tmp:mode=1777,size=128m"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      worker:
+        condition: service_started
+  web-public:
+    image: mnema:0.1.0
+    profiles: ["cloudflare"]
+    command: ["web", "--host", "0.0.0.0", "--port", "8080"]
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      MNEMA_CLOUDFLARE_ACCESS_REQUIRED: "true"
+      MNEMA_SECURE_COOKIES: "1"
+    volumes:
+      - type: bind
+        source: ${MNEMA_HOST_CONFIG_ROOT:-./data/config}
+        target: /var/lib/mnema
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${MNEMA_HOST_ACTIVE_ROOT:-./data/active}
+        target: /data/active
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${MNEMA_HOST_BACKUP_ROOT:-./data/backup}
+        target: /data/backup
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${MNEMA_HOST_SOURCE_ROOT:-./data/test-source}
+        target: /data/test-source
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ./secrets
+        target: /run/secrets
+        read_only: true
+        bind: {create_host_path: false}
     read_only: true
     tmpfs: ["/tmp:mode=1777,size=128m"]
     cap_drop: [ALL]
@@ -27,28 +83,84 @@ services:
     restart: unless-stopped
     env_file: [.env]
     volumes:
-      - ${MNEMA_HOST_CONFIG_ROOT:-./data/config}:/var/lib/mnema
-      - ${MNEMA_HOST_ACTIVE_ROOT:-./data/active}:/data/active
-      - ${MNEMA_HOST_BACKUP_ROOT:-./data/backup}:/data/backup
-      - ${MNEMA_HOST_SOURCE_ROOT:-./data/test-source}:/data/test-source
-      - ./secrets:/run/secrets:ro
+      - type: bind
+        source: ${MNEMA_HOST_CONFIG_ROOT:-./data/config}
+        target: /var/lib/mnema
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${MNEMA_HOST_ACTIVE_ROOT:-./data/active}
+        target: /data/active
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${MNEMA_HOST_BACKUP_ROOT:-./data/backup}
+        target: /data/backup
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${MNEMA_HOST_SOURCE_ROOT:-./data/test-source}
+        target: /data/test-source
+        bind: {create_host_path: false}
+      - type: bind
+        source: ./secrets
+        target: /run/secrets
+        read_only: true
+        bind: {create_host_path: false}
     read_only: true
     tmpfs: ["/tmp:mode=1777,size=256m"]
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     healthcheck:
       disable: true
+  icloud-runner:
+    image: mnema:0.1.0
+    profiles: ["icloud"]
+    command: ["icloud-status-internal"]
+    env_file: [.env]
+    volumes:
+      - type: bind
+        source: ${MNEMA_HOST_CONFIG_ROOT:-./data/config}
+        target: /var/lib/mnema
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${MNEMA_HOST_ACTIVE_ROOT:-./data/active}
+        target: /data/active
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${MNEMA_HOST_BACKUP_ROOT:-./data/backup}
+        target: /data/backup
+        bind: {create_host_path: false}
+      - type: bind
+        source: ./secrets
+        target: /run/secrets
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${MNEMA_HOST_ICLOUD_SESSION_ROOT:-./data/icloud-session}
+        target: /var/lib/mnema/icloud-session
+        bind: {create_host_path: false}
+    read_only: true
+    tmpfs: ["/tmp:mode=1777,size=256m"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
   sftpgo:
     image: drakkan/sftpgo:v2.6.6
     user: "10001:10001"
     restart: unless-stopped
     ports:
       - "127.0.0.1:8081:8080"
-      - "2022:2022"
+      - "${MNEMA_SFTP_BIND:-0.0.0.0}:2022:2022"
     volumes:
-      - ${MNEMA_HOST_SFTPGO_DATA_ROOT:-./data/sftpgo-data}:/var/lib/sftpgo
-      - ${MNEMA_HOST_SFTPGO_HOME_ROOT:-./data/sftpgo-home}:/srv/sftpgo
-      - ${MNEMA_HOST_ACTIVE_ROOT:-./data/active}:/srv/mnema-active
+      - type: bind
+        source: ${MNEMA_HOST_SFTPGO_DATA_ROOT:-./data/sftpgo-data}
+        target: /var/lib/sftpgo
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${MNEMA_HOST_SFTPGO_HOME_ROOT:-./data/sftpgo-home}
+        target: /srv/sftpgo
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${MNEMA_HOST_ACTIVE_ROOT:-./data/active}
+        target: /srv/mnema-active
+        bind: {create_host_path: false}
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
   minio:
@@ -61,8 +173,15 @@ services:
       MINIO_ROOT_PASSWORD_FILE: /run/secrets/minio_password
     ports: ["127.0.0.1:9000:9000", "127.0.0.1:9001:9001"]
     volumes:
-      - ${MNEMA_HOST_MINIO_ROOT:-./data/minio}:/data
-      - ./secrets:/run/secrets:ro
+      - type: bind
+        source: ${MNEMA_HOST_MINIO_ROOT:-./data/minio}
+        target: /data
+        bind: {create_host_path: false}
+      - type: bind
+        source: ./secrets
+        target: /run/secrets
+        read_only: true
+        bind: {create_host_path: false}
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
   cloudflared:
@@ -72,8 +191,12 @@ services:
     environment:
       TUNNEL_TOKEN_FILE: /run/secrets/cloudflare_tunnel_token
     volumes:
-      - ./secrets:/run/secrets:ro
+      - type: bind
+        source: ./secrets
+        target: /run/secrets
+        read_only: true
+        bind: {create_host_path: false}
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
-    depends_on: [web, sftpgo]
+    depends_on: [web-public]

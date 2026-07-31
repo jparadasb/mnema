@@ -18,8 +18,12 @@ shift
 [[ -d "${workspace}" && -w "${workspace}" ]] || fail "workspace must be an existing writable directory"
 
 minio_restart_test=false
+rclone_proof=false
 if [[ ${1:-} == "--minio-restart-test" ]]; then
   minio_restart_test=true
+  shift
+elif [[ ${1:-} == "--rclone-proof" ]]; then
+  rclone_proof=true
   shift
 fi
 
@@ -44,13 +48,23 @@ trap cleanup EXIT INT TERM
 install -d -o 10001 -g 10001 -m 0700 \
   "${run_root}/secrets" \
   "${run_root}/minio-data" \
-  "${run_root}/workspace"
+  "${run_root}/workspace" \
+  "${run_root}/workspace/tmp"
 chown 10001:10001 "${run_root}"
 chmod 0700 "${run_root}"
 printf '%s\n' "mnema-stress" >"${run_root}/secrets/minio-user"
 openssl rand -hex 32 >"${run_root}/secrets/minio-password"
 openssl rand 32 >"${run_root}/secrets/cold-key"
 openssl rand -base64 48 >"${run_root}/secrets/kopia-password"
+{
+  printf '[minio]\n'
+  printf 'type = s3\n'
+  printf 'provider = Minio\n'
+  printf 'access_key_id = %s\n' "$(tr -d '\n' <"${run_root}/secrets/minio-user")"
+  printf 'secret_access_key = %s\n' "$(tr -d '\n' <"${run_root}/secrets/minio-password")"
+  printf 'endpoint = http://%s:9000\n' "${minio_container}"
+  printf 'acl = private\n'
+} >"${run_root}/secrets/rclone.conf"
 chown 10001:10001 "${run_root}/secrets/"*
 chmod 0400 "${run_root}/secrets/"*
 
@@ -79,11 +93,34 @@ done
 [[ "$(docker inspect --format '{{.State.Health.Status}}' "${minio_container}")" == "healthy" ]] ||
   fail "isolated MinIO did not become healthy"
 
+if [[ "${rclone_proof}" == "true" ]]; then
+  docker run --rm \
+    --network "${network}" \
+    --user 10001:10001 \
+    --no-healthcheck \
+    --entrypoint python \
+    --env TMPDIR=/stress/workspace/tmp \
+    --env PYTHONPATH=/mnema-src \
+    --volume "${run_root}:/stress" \
+    --volume "$(realpath -e -- "$(dirname -- "${BASH_SOURCE[0]}")/../src"):/mnema-src:ro" \
+    --volume "$(realpath -e -- "$(dirname -- "${BASH_SOURCE[0]}")/verify-rclone.py"):/verify-rclone.py:ro" \
+    "${HARNESS_IMAGE}" \
+    /verify-rclone.py \
+    --config-file /stress/secrets/rclone.conf \
+    --key-file /stress/secrets/cold-key \
+    --remote-root minio:mnema-stress \
+    --temporary-root /stress/workspace \
+    "$@"
+  exit
+fi
+
 run_harness() {
   docker run --rm \
     --network "${network}" \
     --user 10001:10001 \
+    --no-healthcheck \
     --entrypoint python \
+    --env TMPDIR=/stress/workspace/tmp \
     --volume "${run_root}:/stress" \
     --volume "$(realpath -e -- "$(dirname -- "${BASH_SOURCE[0]}")/stress-test.py"):/stress-test.py:ro" \
     "${HARNESS_IMAGE}" \

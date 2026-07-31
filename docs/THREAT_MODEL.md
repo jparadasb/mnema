@@ -12,14 +12,21 @@ Prevent unauthorized reads and deletes; never delete a source before independent
 
 - **Stolen Pi/SSD:** cold copy uses client-side authenticated encryption; recommend host/full-disk encryption; secrets mode `0600`; document physical exposure. Active NAS encryption remains operator responsibility.
 - **Compromised NAS account/ransomware:** SFTPGo sees active data only, never backup repository or secrets; Kopia versions and remote copy provide recovery; least-privilege users.
-- **Compromised Apple/source account:** source credentials scoped when future APIs allow; deletion disabled by default; per-run caps, pause, revalidation, and audit.
-- **Compromised Cloudflare account:** tunnel optional; local emergency access retained; future Access JWT must validate issuer, audience, signature, and expiry.
+- **Compromised Apple/source account:** use a dedicated Apple account; password and MFA
+  remain interactive; protected session cookies are narrowly mounted; iCloud deletion is
+  structurally unavailable. Web access requires Advanced Data Protection to be disabled,
+  so this integration intentionally trades Apple-side protection for appliance access.
+- **Compromised Cloudflare account:** tunnel optional; local emergency access retained;
+  public web independently validates Access JWT issuer, audience, RS256 signature, issue
+  time, subject, and expiry. Cloudflare account compromise remains an external risk.
 - **Compromised object credentials:** client-side encryption limits disclosure; scoped bucket credentials; immutable/object-lock policy recommended; credentials cannot enable source deletion alone.
 - **Malicious files/path traversal/symlinks:** resolved containment checks, relative-path normalization, symlink rejection, no execution, no thumbnail/indexing pipeline.
 - **Command injection:** subprocess argument arrays, validated identifiers, no `shell=True`.
 - **Accidental mass deletion:** global and per-source off by default, quarantine, manual approval option, item/byte/percentage limits, one-at-a-time deletion, permanent tombstones.
 - **Backup corruption:** independent restore-and-hash verification; success exit status alone is insufficient; periodic restore tests.
 - **Power failure:** fsync/atomic rename, transactional state/audit, leases, startup reconciliation, uncertain deletion enters manual review.
+- **Missing storage at boot:** Docker/Mnema mountpoint gates and non-creating Compose
+  binds prevent fallback writes into empty system-disk mountpoint directories.
 - **Supply-chain compromise:** pinned Python/container versions, hashes/lockfile planned, Buildx/CI scans planned, notices, minimal image, routine updates.
 - **Secret leakage:** redaction, secret files outside repository, secure generation, no credentials in commands/logs, restrictive permissions.
 - **Container escape:** non-root user where practical, dropped capabilities, `no-new-privileges`, read-only root filesystem/tmpfs, narrow mounts, no Docker socket.
@@ -44,4 +51,3 @@ Any missing, stale, ambiguous, or contradictory fact denies deletion.
 ## Review triggers
 
 Review before iCloud work, production deletion, public exposure, automated formatting, new privileged mounts, new source adapter, encryption-key rotation, or binary appliance distribution.
-

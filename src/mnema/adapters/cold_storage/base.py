@@ -5,6 +5,14 @@ from pathlib import Path
 from typing import Protocol
 
 
+class ColdRestorePending(RuntimeError):
+    """Raised after an asynchronous archive restore is requested or remains pending."""
+
+    def __init__(self, message: str, *, requested: bool) -> None:
+        super().__init__(message)
+        self.requested = requested
+
+
 @dataclass(frozen=True)
 class ColdReceipt:
     provider: str
@@ -24,6 +32,8 @@ class ColdStorage(Protocol):
     ) -> ColdReceipt: ...
 
     async def verify(self, receipt: ColdReceipt, expected_sha256: str) -> bool: ...
+
+    async def archive_verified(self, receipt: ColdReceipt) -> None: ...
 
     async def restore(self, receipt: ColdReceipt, destination: Path) -> None: ...
 

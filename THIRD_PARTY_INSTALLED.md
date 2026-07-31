@@ -4,6 +4,7 @@
 | Mako              | 1.3.12      | MIT License                          | https://www.makotemplates.org/                             |
 | MarkupSafe        | 3.0.3       | UNKNOWN                              | https://github.com/pallets/markupsafe/                     |
 | PyYAML            | 6.0.2       | MIT License                          | https://pyyaml.org/                                        |
+| PyJWT             | 2.13.0      | MIT License                          | https://github.com/jpadilla/pyjwt                          |
 | Pygments          | 2.20.0      | UNKNOWN                              | https://pygments.org                                       |
 | SQLAlchemy        | 2.0.41      | MIT                                  | https://www.sqlalchemy.org                                 |
 | alembic           | 1.18.5      | UNKNOWN                              | https://alembic.sqlalchemy.org                             |
@@ -26,6 +27,7 @@
 | httptools         | 0.8.0       | UNKNOWN                              | https://github.com/MagicStack/httptools                    |
 | httpx             | 0.28.1      | BSD License                          | https://github.com/encode/httpx                            |
 | identify          | 2.6.19      | MIT                                  | https://github.com/pre-commit/identify                     |
+| icloudpd          | 1.32.3      | MIT License                          | https://github.com/icloud-photos-downloader/icloud_photos_downloader |
 | idna              | 3.18        | UNKNOWN                              | https://github.com/kjd/idna                                |
 | iniconfig         | 2.3.0       | UNKNOWN                              | https://github.com/pytest-dev/iniconfig                    |
 | itsdangerous      | 2.2.0       | BSD License                          | https://github.com/pallets/itsdangerous/                   |
