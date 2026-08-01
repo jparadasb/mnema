@@ -18,8 +18,9 @@ encrypted off-site archive, and verifies every copy independently before advanci
 durable workflow.
 
 The project favors recoverability over convenience. Automatic source deletion is
-disabled, iCloud deletion is not implemented, cloud deletion is not implemented, and an
-upload is never considered a backup until Mnema restores and hashes it.
+disabled. Optional iCloud capacity relief requires an exact approved manifest and verified
+Glacier archive; cloud deletion is not implemented. An upload is never considered a backup
+until Mnema restores and hashes it.
 
 ## What Mnema provides
 
@@ -146,6 +147,7 @@ sudo mnema icloud auth
 sudo mnema icloud preview
 sudo mnema icloud sync
 sudo mnema icloud status
+sudo mnema icloud storage
 ```
 
 Authentication and two-factor verification are interactive. Mnema stores protected
@@ -154,8 +156,23 @@ arms the daily timer. Imports include original photos, videos, RAW assets, and L
 components.
 
 iCloud web access must be enabled and Advanced Data Protection must be disabled for the
-pinned web-access client. iCloud Drive, Shared Library, multiple accounts, and all
-iCloud deletion are unsupported. See [iCloud limitations](docs/ICLOUD_LIMITATIONS.md).
+pinned web-access client. iCloud Drive, Shared Library, and multiple accounts are
+unsupported. Optional capacity relief remains disabled by default:
+
+```bash
+sudo mnema configure icloud --enabled --capacity-relief
+sudo mnema icloud cleanup preview
+sudo mnema resume-deletion
+sudo mnema icloud cleanup approve MANIFEST_ID
+```
+
+At 90% total iCloud usage, Mnema proposes oldest verified non-favorite assets, capped at
+1,000 assets and 10% of quota, targeting 80%. Approval revalidates every asset and moves it
+to Recently Deleted; Pi and Glacier copies remain. See
+[iCloud limitations](docs/ICLOUD_LIMITATIONS.md).
+
+Current release keeps execution milestone-locked pending dedicated synthetic-account
+destructive review; quota inspection and exact manifest preview are available now.
 
 ## Cloudflare and service URLs
 
@@ -185,10 +202,12 @@ mnema start|stop|restart              Control the stack
 mnema configure                       Run the guided configuration
 mnema config show|validate|diff       Inspect desired state safely
 mnema urls [--json]                   Show reachable service endpoints
-mnema icloud auth|preview|sync|status Manage read-only iCloud imports
+mnema icloud auth|preview|sync|status Manage iCloud imports
+mnema icloud storage|cleanup ...      Inspect quota and approve guarded cleanup
 mnema backup create PATH              Back up configuration and secrets
 mnema restore config PATH             Restore configuration safely
-mnema update                          Install a verified release archive
+mnema update --latest                 Install latest verified GitHub release
+mnema update --archive ...            Install a verified local release archive
 mnema rollback                        Restore the previous release
 mnema status                          Show archive and job state
 mnema scan [--archive]                Discover and optionally archive items
@@ -204,7 +223,8 @@ See the [complete CLI guide](docs/CLI.md).
 ## Safety model
 
 - Source deletion is globally disabled and safety-locked by default.
-- iCloud and cloud-storage adapters expose no deletion capability.
+- Local iCloud and cloud-storage adapters expose no deletion capability; Apple cleanup uses
+  a separate manifest-bound control plane.
 - No route or adapter can bypass `DeletionSafetyGate`.
 - Active and backup storage must resolve to different filesystem identities.
 - Missing mounts fail closed instead of silently writing to the system disk.
@@ -213,7 +233,7 @@ See the [complete CLI guide](docs/CLI.md).
 - Restore verification compares plaintext SHA-256, not only provider metadata.
 - Destructive tests use temporary directories and require `MNEMA_ALLOW_TEST_DELETE=1`.
 
-Production source deletion remains a separate, explicitly reviewed future milestone.
+Any new production deletion path remains a separate, explicitly reviewed milestone.
 
 ## Configuration backup and recovery
 

@@ -4,7 +4,18 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, Enum, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    Boolean,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from mnema.domain.states import ArchiveState
@@ -49,6 +60,7 @@ class ArchiveItem(Base):
     uploaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     remote_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     remote_verification_method: Mapped[str | None] = mapped_column(Text)
+    cold_archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     quarantine_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     deletion_timestamp: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     restore_test_status: Mapped[str | None] = mapped_column(String(64))
@@ -139,3 +151,98 @@ class RuntimeSetting(Base):
         default=utcnow,
         onupdate=utcnow,
     )
+
+
+class ICloudCleanupStatus(StrEnum):
+    PENDING_APPROVAL = "PENDING_APPROVAL"
+    EXECUTING = "EXECUTING"
+    COMPLETED = "COMPLETED"
+    PARTIAL = "PARTIAL"
+    MANUAL_REVIEW = "MANUAL_REVIEW"
+    EXPIRED = "EXPIRED"
+
+
+class ICloudAsset(Base):
+    __tablename__ = "icloud_assets"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    apple_asset_id: Mapped[str] = mapped_column(Text, unique=True)
+    asset_record_name: Mapped[str] = mapped_column(Text)
+    change_tag: Mapped[str] = mapped_column(Text)
+    created_at_remote: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    original_size: Mapped[int] = mapped_column(BigInteger)
+    favorite: Mapped[bool] = mapped_column(Boolean, default=False)
+    library: Mapped[str] = mapped_column(String(64), default="PrimarySync")
+    expected_components: Mapped[int] = mapped_column(Integer, default=1)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    remotely_deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    manual_review_reason: Mapped[str | None] = mapped_column(Text)
+    components: Mapped[list[ICloudAssetComponent]] = relationship(
+        back_populates="asset", cascade="all, delete-orphan"
+    )
+
+
+class ICloudAssetComponent(Base):
+    __tablename__ = "icloud_asset_components"
+    __table_args__ = (
+        Index("ix_icloud_asset_component", "icloud_asset_id", "archive_item_id", unique=True),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    icloud_asset_id: Mapped[int] = mapped_column(ForeignKey("icloud_assets.id"))
+    archive_item_id: Mapped[int] = mapped_column(ForeignKey("archive_items.id"), unique=True)
+    asset: Mapped[ICloudAsset] = relationship(back_populates="components")
+    archive_item: Mapped[ArchiveItem] = relationship()
+
+
+class ICloudQuotaObservation(Base):
+    __tablename__ = "icloud_quota_observations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    used_bytes: Mapped[int] = mapped_column(BigInteger)
+    quota_bytes: Mapped[int] = mapped_column(BigInteger)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ICloudCleanupManifest(Base):
+    __tablename__ = "icloud_cleanup_manifests"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    status: Mapped[ICloudCleanupStatus] = mapped_column(
+        Enum(ICloudCleanupStatus, native_enum=False), default=ICloudCleanupStatus.PENDING_APPROVAL
+    )
+    digest: Mapped[str] = mapped_column(String(64), unique=True)
+    used_bytes: Mapped[int] = mapped_column(BigInteger)
+    quota_bytes: Mapped[int] = mapped_column(BigInteger)
+    target_bytes: Mapped[int] = mapped_column(BigInteger)
+    planned_bytes: Mapped[int] = mapped_column(BigInteger)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    failure_reason: Mapped[str | None] = mapped_column(Text)
+    entries: Mapped[list[ICloudCleanupEntry]] = relationship(
+        back_populates="manifest",
+        cascade="all, delete-orphan",
+        order_by="ICloudCleanupEntry.position",
+    )
+
+
+class ICloudCleanupEntry(Base):
+    __tablename__ = "icloud_cleanup_entries"
+    __table_args__ = (
+        Index("ix_icloud_cleanup_entry", "manifest_id", "icloud_asset_id", unique=True),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    manifest_id: Mapped[int] = mapped_column(ForeignKey("icloud_cleanup_manifests.id"))
+    icloud_asset_id: Mapped[int] = mapped_column(ForeignKey("icloud_assets.id"))
+    position: Mapped[int] = mapped_column(Integer)
+    apple_asset_id: Mapped[str] = mapped_column(Text)
+    asset_record_name: Mapped[str] = mapped_column(Text)
+    change_tag: Mapped[str] = mapped_column(Text)
+    size_bytes: Mapped[int] = mapped_column(BigInteger)
+    evidence_digest: Mapped[str] = mapped_column(String(64))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    manifest: Mapped[ICloudCleanupManifest] = relationship(back_populates="entries")
+    asset: Mapped[ICloudAsset] = relationship()

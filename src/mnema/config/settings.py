@@ -24,7 +24,7 @@ class SourcePolicy(BaseModel):
 
 
 class DeletionLimits(BaseModel):
-    max_files_deleted_per_run: Annotated[int, Field(ge=0, le=100)] = 5
+    max_files_deleted_per_run: Annotated[int, Field(ge=0, le=1000)] = 5
     max_bytes_deleted_per_run: Annotated[int, Field(ge=0)] = 1_000_000_000
     max_percentage_deleted_per_run: Annotated[float, Field(ge=0, le=100)] = 1.0
 
@@ -76,6 +76,13 @@ class Settings(BaseSettings):
     icloud_library: Literal["PrimarySync"] = "PrimarySync"
     icloud_session_directory: Path = Path("/var/lib/mnema/icloud-session")
     icloud_import_root: Path = Path("/data/active/iCloud Photos")
+    icloud_capacity_relief_enabled: bool = False
+    icloud_deletion_milestone_approved: bool = False
+    icloud_cleanup_trigger_percent: Annotated[float, Field(gt=0, le=100)] = 90
+    icloud_cleanup_target_percent: Annotated[float, Field(ge=0, lt=100)] = 80
+    icloud_cleanup_quarantine_days: Annotated[int, Field(ge=1, le=3650)] = 7
+    icloud_cleanup_max_assets: Annotated[int, Field(ge=1, le=1000)] = 1000
+    icloud_cleanup_max_quota_percent: Annotated[float, Field(gt=0, le=10)] = 10
 
     @field_validator(
         "active_root",
@@ -123,6 +130,8 @@ class Settings(BaseSettings):
             raise ValueError("iCloud Photos requires an Apple ID")
         if not self.icloud_import_root.is_relative_to(self.active_root):
             raise ValueError("iCloud import root must remain beneath active storage")
+        if self.icloud_cleanup_target_percent >= self.icloud_cleanup_trigger_percent:
+            raise ValueError("iCloud cleanup target must be below trigger")
         return self
 
     @model_validator(mode="after")

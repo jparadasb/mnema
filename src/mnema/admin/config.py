@@ -144,6 +144,12 @@ class ICloudConfig(BaseModel):
     library: Literal["Personal Library"] = "Personal Library"
     daily_at: str = "03:00"
     session_directory: Path = Path("/etc/mnema/icloud-session")
+    capacity_relief_enabled: bool = False
+    cleanup_trigger_percent: float = Field(default=90, gt=0, le=100)
+    cleanup_target_percent: float = Field(default=80, ge=0, lt=100)
+    cleanup_quarantine_days: int = Field(default=7, ge=1, le=3650)
+    cleanup_max_assets: int = Field(default=1000, ge=1, le=1000)
+    cleanup_max_quota_percent: float = Field(default=10, gt=0, le=10)
 
     @field_validator("apple_id")
     @classmethod
@@ -177,6 +183,10 @@ class ICloudConfig(BaseModel):
     def enabled_configuration_is_complete(self) -> ICloudConfig:
         if self.enabled and not self.apple_id:
             raise ValueError("Apple ID is required when iCloud is enabled")
+        if self.cleanup_target_percent >= self.cleanup_trigger_percent:
+            raise ValueError("iCloud cleanup target must be below trigger")
+        if self.capacity_relief_enabled and not self.enabled:
+            raise ValueError("iCloud capacity relief requires iCloud Photos")
         return self
 
 
@@ -285,6 +295,14 @@ class ApplianceConfig(BaseModel):
             "MNEMA_ICLOUD_LIBRARY": "PrimarySync",
             "MNEMA_ICLOUD_SESSION_DIRECTORY": "/var/lib/mnema/icloud-session",
             "MNEMA_ICLOUD_IMPORT_ROOT": "/data/active/iCloud Photos",
+            "MNEMA_ICLOUD_CAPACITY_RELIEF_ENABLED": str(
+                self.icloud.capacity_relief_enabled
+            ).lower(),
+            "MNEMA_ICLOUD_CLEANUP_TRIGGER_PERCENT": str(self.icloud.cleanup_trigger_percent),
+            "MNEMA_ICLOUD_CLEANUP_TARGET_PERCENT": str(self.icloud.cleanup_target_percent),
+            "MNEMA_ICLOUD_CLEANUP_QUARANTINE_DAYS": str(self.icloud.cleanup_quarantine_days),
+            "MNEMA_ICLOUD_CLEANUP_MAX_ASSETS": str(self.icloud.cleanup_max_assets),
+            "MNEMA_ICLOUD_CLEANUP_MAX_QUOTA_PERCENT": str(self.icloud.cleanup_max_quota_percent),
             "COMPOSE_PROFILES": ",".join(profiles),
         }
         if self.cold_storage.integration_minio:

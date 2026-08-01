@@ -16,7 +16,7 @@ dependencies = [
   "boto3==1.39.14",
   "cryptography==45.0.5",
   "fastapi==0.116.1",
-  "icloudpd==1.32.3",
+  "icloudpd @ https://github.com/icloud-photos-downloader/icloud_photos_downloader/archive/2035bb13ce7d1ac17c70e1e09a7517f474dfd1d9.tar.gz",
   "itsdangerous==2.2.0",
   "jinja2==3.1.6",
   "pydantic==2.11.7",

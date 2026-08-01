@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-from sqlalchemy import Engine, create_engine, event, text
+from sqlalchemy import Engine, create_engine, event, inspect, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from mnema.jobs.models import Base
@@ -32,6 +32,20 @@ class Database:
 
     def create_schema(self) -> None:
         Base.metadata.create_all(self.engine)
+        columns = {column["name"] for column in inspect(self.engine).get_columns("archive_items")}
+        if "cold_archived_at" not in columns:
+            with self.engine.begin() as connection:
+                connection.execute(
+                    text("ALTER TABLE archive_items ADD COLUMN cold_archived_at DATETIME")
+                )
+                connection.execute(
+                    text(
+                        "UPDATE archive_items SET cold_archived_at = ("
+                        "SELECT MAX(created_at) FROM audit_events "
+                        "WHERE audit_events.archive_item_id = archive_items.id "
+                        "AND audit_events.to_state = 'COLD_ARCHIVED')"
+                    )
+                )
 
     @contextmanager
     def session(self) -> Iterator[Session]:

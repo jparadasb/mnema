@@ -16,7 +16,7 @@ from mnema.admin.config import (
     dump_config,
     render_environment,
 )
-from mnema.admin.host import ApplianceManager, AppliancePaths, CommandRunner
+from mnema.admin.host import ApplianceManager, AppliancePaths, CommandRunner, GitHubRelease
 
 
 class FakeRunner(CommandRunner):
@@ -220,6 +220,71 @@ def test_release_update_and_rollback_use_verified_archive(
     assert (manager.paths.install_root / "compose.yaml").read_text(encoding="utf-8") == (
         "services: {}\n"
     )
+
+
+def test_latest_release_requires_github_digest_and_matching_checksum(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager, _, _ = configured_manager(tmp_path, monkeypatch)
+    archive_content = b"verified-release"
+    digest = hashlib.sha256(archive_content).hexdigest()
+    latest = GitHubRelease(
+        "v1.2.3",
+        "https://github.com/jparadasb/mnema/releases/download/v1.2.3/mnema-release.tar.gz",
+        "https://github.com/jparadasb/mnema/releases/download/v1.2.3/mnema-release.tar.gz.sha256",
+        digest,
+    )
+    monkeypatch.setattr(manager, "latest_github_release", lambda _repository: latest)
+
+    def download(url: str, destination: Path, **_kwargs: object) -> None:
+        if url.endswith(".sha256"):
+            destination.write_text(f"{digest}  mnema-release.tar.gz\n", encoding="ascii")
+        else:
+            destination.write_bytes(archive_content)
+
+    monkeypatch.setattr(manager, "_download_https", download)
+    monkeypatch.setattr(
+        manager,
+        "update_from_archive",
+        lambda archive, expected: expected[:12]
+        if archive.read_bytes() == archive_content
+        else "bad",
+    )
+
+    assert manager.update_from_latest_release() == ("v1.2.3", digest[:12])
+
+
+def test_latest_release_metadata_parser_rejects_missing_digest(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager, _, _ = configured_manager(tmp_path, monkeypatch)
+
+    def metadata(_url: str, destination: Path, **_kwargs: object) -> None:
+        destination.write_text(
+            json.dumps(
+                {
+                    "tag_name": "v1.2.3",
+                    "assets": [
+                        {
+                            "name": "mnema-release.tar.gz",
+                            "browser_download_url": "https://github.com/archive",
+                            "digest": None,
+                        },
+                        {
+                            "name": "mnema-release.tar.gz.sha256",
+                            "browser_download_url": "https://github.com/checksum",
+                        },
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(manager, "_download_https", metadata)
+    with pytest.raises(RuntimeError, match="GitHub SHA-256"):
+        manager.latest_github_release()
 
 
 def test_backup_and_restore_preserve_config_secrets_and_consistent_sqlite(

@@ -39,7 +39,11 @@ uninstall_app = typer.Typer(
     no_args_is_help=False,
     help="Safely disable Mnema without deleting data.",
 )
-icloud_app = typer.Typer(no_args_is_help=True, help="Manage read-only iCloud Photos imports.")
+icloud_app = typer.Typer(no_args_is_help=True, help="Manage guarded iCloud Photos archiving.")
+icloud_cleanup_app = typer.Typer(
+    no_args_is_help=True, help="Preview and approve capacity-driven iCloud cleanup."
+)
+icloud_app.add_typer(icloud_cleanup_app, name="cleanup")
 
 
 def _manager() -> ApplianceManager:
@@ -235,10 +239,25 @@ def _prompt_icloud(current: ICloudConfig) -> ICloudConfig:
         raise ValueError(
             "iCloud setup stopped because Apple account requirements were not accepted"
         )
+    capacity_relief = typer.confirm(
+        "Enable guarded capacity-relief proposals at 90% iCloud usage?",
+        default=current.capacity_relief_enabled,
+    )
+    if capacity_relief:
+        typer.echo(
+            "Cleanup requires exact manifest approval and moves assets to Recently Deleted. "
+            "Favorites and Raspberry Pi copies remain protected."
+        )
     return ICloudConfig(
         enabled=True,
         apple_id=typer.prompt("Dedicated Apple ID", default=current.apple_id),
         daily_at=typer.prompt("Daily import time (HH:MM)", default=current.daily_at),
+        capacity_relief_enabled=capacity_relief,
+        cleanup_trigger_percent=current.cleanup_trigger_percent,
+        cleanup_target_percent=current.cleanup_target_percent,
+        cleanup_quarantine_days=current.cleanup_quarantine_days,
+        cleanup_max_assets=current.cleanup_max_assets,
+        cleanup_max_quota_percent=current.cleanup_max_quota_percent,
     )
 
 
@@ -468,11 +487,15 @@ def configure_icloud(
     enabled: Annotated[bool | None, typer.Option("--enabled/--disabled")] = None,
     apple_id: Annotated[str | None, typer.Option("--apple-id")] = None,
     daily_at: Annotated[str | None, typer.Option("--daily-at")] = None,
+    capacity_relief: Annotated[bool, typer.Option("--capacity-relief")] = False,
+    read_only: Annotated[bool, typer.Option("--read-only")] = False,
     defer_auth: Annotated[bool, typer.Option("--defer-auth")] = False,
     yes: Annotated[bool, typer.Option("--yes")] = False,
 ) -> None:
     manager = _manager()
     try:
+        if capacity_relief and read_only:
+            raise ValueError("choose either --capacity-relief or --read-only")
         current = manager.config()
         if enabled is None:
             icloud = _prompt_icloud(current.icloud)
@@ -483,6 +506,18 @@ def configure_icloud(
                 enabled=True,
                 apple_id=apple_id or current.icloud.apple_id,
                 daily_at=daily_at or current.icloud.daily_at,
+                capacity_relief_enabled=(
+                    True
+                    if capacity_relief
+                    else False
+                    if read_only
+                    else current.icloud.capacity_relief_enabled
+                ),
+                cleanup_trigger_percent=current.icloud.cleanup_trigger_percent,
+                cleanup_target_percent=current.icloud.cleanup_target_percent,
+                cleanup_quarantine_days=current.icloud.cleanup_quarantine_days,
+                cleanup_max_assets=current.icloud.cleanup_max_assets,
+                cleanup_max_quota_percent=current.icloud.cleanup_max_quota_percent,
             )
         _save(manager, current.model_copy(update={"icloud": icloud}), yes=yes)
         if icloud.enabled and not defer_auth:
@@ -524,6 +559,45 @@ def icloud_status() -> None:
     try:
         _manager().icloud_status()
     except (OSError, ValueError, RuntimeError, PermissionError) as error:
+        _fail(error)
+
+
+@icloud_app.command("storage")
+def icloud_storage() -> None:
+    try:
+        _manager().icloud_storage()
+    except (OSError, ValueError, RuntimeError, PermissionError) as error:
+        _fail(error)
+
+
+@icloud_cleanup_app.command("preview")
+def icloud_cleanup_preview() -> None:
+    try:
+        _manager().icloud_cleanup_preview()
+    except (OSError, ValueError, RuntimeError, PermissionError) as error:
+        _fail(error)
+
+
+@icloud_cleanup_app.command("status")
+def icloud_cleanup_status() -> None:
+    try:
+        _manager().icloud_cleanup_status()
+    except (OSError, ValueError, RuntimeError, PermissionError) as error:
+        _fail(error)
+
+
+@icloud_cleanup_app.command("approve")
+def icloud_cleanup_approve(manifest_id: int) -> None:
+    manager = _manager()
+    try:
+        payload = manager.icloud_cleanup_manifest(manifest_id)
+        digest = str(payload["digest"])
+        typer.echo(json.dumps(payload, indent=2))
+        confirmation = typer.prompt("Type manifest digest prefix to approve")
+        if confirmation != digest[:12]:
+            raise ValueError("manifest digest confirmation does not match")
+        manager.icloud_cleanup_approve(manifest_id, digest)
+    except (OSError, ValueError, RuntimeError, PermissionError, KeyError) as error:
         _fail(error)
 
 
@@ -782,16 +856,31 @@ def register_admin_commands(app: typer.Typer) -> None:
 
     @app.command("update")
     def update(
-        archive: Annotated[Path, typer.Option()],
-        sha256: Annotated[str, typer.Option("--sha256")],
+        archive: Annotated[Path | None, typer.Option()] = None,
+        sha256: Annotated[str | None, typer.Option("--sha256")] = None,
+        latest: Annotated[bool, typer.Option("--latest")] = False,
+        repository: Annotated[str, typer.Option("--repository")] = "jparadasb/mnema",
+        yes: Annotated[bool, typer.Option("--yes")] = False,
     ) -> None:
-        if not typer.confirm(
-            "Back up configuration, stop Mnema, install this verified release, and health-check?"
+        if latest == (archive is not None):
+            _fail(ValueError("choose --latest or --archive with --sha256"))
+        if archive is not None and sha256 is None:
+            _fail(ValueError("--archive requires --sha256"))
+        if latest and sha256 is not None:
+            _fail(ValueError("--sha256 cannot be combined with --latest"))
+        if not yes and not typer.confirm(
+            "Back up configuration, stop Mnema, install verified release, and health-check?"
         ):
             typer.echo("No changes made.")
             raise typer.Exit()
         try:
-            release = _manager().update_from_archive(archive.resolve(), sha256)
+            manager = _manager()
+            if latest:
+                tag, release = manager.update_from_latest_release(repository)
+                typer.echo(f"GitHub release {tag} resolved and verified.")
+            else:
+                assert archive is not None and sha256 is not None
+                release = manager.update_from_archive(archive.resolve(), sha256)
         except (OSError, ValueError, RuntimeError, PermissionError) as error:
             _fail(error)
         typer.echo(f"Release {release} installed. Rollback metadata retained.")

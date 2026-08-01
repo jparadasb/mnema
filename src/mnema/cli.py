@@ -14,20 +14,30 @@ from typing import Annotated
 import typer
 import uvicorn
 from sqlalchemy import func, select
+from sqlalchemy.orm import Session
 
 from mnema.adapters.backup.filesystem import FilesystemVersionedBackup
 from mnema.adapters.cold_storage.local import LocalEncryptedColdStorage
 from mnema.adapters.nas.fileops import sha256_file
+from mnema.adapters.sources.icloud_control import ICloudControlError, PyiCloudControlClient
 from mnema.adapters.sources.local import LocalFilesystemSourceAdapter
 from mnema.admin.cli import register_admin_commands
 from mnema.admin.host import ApplianceManager
 from mnema.config import DeletionLimits, Settings, SourcePolicy
 from mnema.diagnostics.health import startup_checks
 from mnema.domain.factory import build_icloud_workflow, build_local_workflow
+from mnema.domain.icloud_cleanup import ICloudCleanupBlocked, ICloudCleanupService
 from mnema.domain.states import ArchiveState
 from mnema.domain.workflow import ArchiveWorkflow
 from mnema.jobs import Database
-from mnema.jobs.models import ArchiveItem, AuditEvent, Job, RuntimeSetting
+from mnema.jobs.models import (
+    ArchiveItem,
+    AuditEvent,
+    ICloudCleanupManifest,
+    ICloudQuotaObservation,
+    Job,
+    RuntimeSetting,
+)
 from mnema.policies.deletion import DeletionRunUsage
 from mnema.worker.main import run_worker
 
@@ -54,6 +64,14 @@ def _set_runtime_value(database: Database, key: str, value: str) -> None:
             session.add(RuntimeSetting(key=key, value=value))
         else:
             setting.value = value
+
+
+def _icloud_cleanup(settings: Settings) -> ICloudCleanupService:
+    _require_icloud(settings)
+    return ICloudCleanupService(
+        settings,
+        PyiCloudControlClient(settings.icloud_apple_id, settings.icloud_session_directory),
+    )
 
 
 def _test_workflow(settings: Settings, *, deletion_enabled: bool = False) -> ArchiveWorkflow:
@@ -468,10 +486,23 @@ def icloud_sync_internal() -> None:
                     }:
                         await workflow.archive(session, item)
                         archived += 1
+                cleanup_manifest_id = None
+                if settings.icloud_capacity_relief_enabled:
+                    try:
+                        manifest = _icloud_cleanup(settings).create_manifest(session)
+                        cleanup_manifest_id = manifest.id if manifest else None
+                        _set_session_value(session, "icloud_cleanup_last_error", "")
+                    except (ICloudControlError, ICloudCleanupBlocked) as error:
+                        _set_session_value(
+                            session, "icloud_cleanup_last_error", type(error).__name__
+                        )
             _set_runtime_value(database, "icloud_last_result", "succeeded")
             _set_runtime_value(database, "icloud_last_success", datetime.now(UTC).isoformat())
             _set_runtime_value(database, "icloud_last_error", "")
-            typer.echo(f"discovered={len(items)} archived={archived}")
+            typer.echo(
+                f"discovered={len(items)} archived={archived} "
+                f"cleanup_manifest={cleanup_manifest_id or 'none'}"
+            )
         except Exception as error:
             _set_runtime_value(database, "icloud_last_result", "failed")
             _set_runtime_value(database, "icloud_last_error", type(error).__name__)
@@ -517,6 +548,149 @@ def icloud_status_internal() -> None:
         )
     )
     database.close()
+
+
+@app.command("icloud-storage-internal", hidden=True)
+def icloud_storage_internal() -> None:
+    settings = Settings()
+    database = _database(settings)
+    try:
+        with database.session() as session:
+            observation = _icloud_cleanup(settings).observe_quota(session)
+            typer.echo(
+                json.dumps(
+                    {
+                        "used_bytes": observation.used_bytes,
+                        "quota_bytes": observation.quota_bytes,
+                        "used_percent": round(
+                            observation.used_bytes / observation.quota_bytes * 100, 2
+                        ),
+                        "trigger_percent": settings.icloud_cleanup_trigger_percent,
+                        "target_percent": settings.icloud_cleanup_target_percent,
+                        "observed_at": observation.observed_at.isoformat(),
+                    },
+                    indent=2,
+                )
+            )
+    finally:
+        database.close()
+
+
+@app.command("icloud-cleanup-preview-internal", hidden=True)
+def icloud_cleanup_preview_internal() -> None:
+    settings = Settings()
+    database = _database(settings)
+    try:
+        with database.session() as session:
+            manifest = _icloud_cleanup(settings).create_manifest(session)
+            if manifest is None:
+                typer.echo(json.dumps({"pressure": False, "manifest": None}, indent=2))
+                return
+            typer.echo(json.dumps(_manifest_payload(manifest), indent=2))
+    except ICloudCleanupBlocked as error:
+        typer.echo(f"Refused: {error}", err=True)
+        raise typer.Exit(2) from error
+    finally:
+        database.close()
+
+
+@app.command("icloud-cleanup-status-internal", hidden=True)
+def icloud_cleanup_status_internal() -> None:
+    settings = Settings()
+    database = _database(settings)
+    try:
+        with database.session() as session:
+            observation = session.scalar(
+                select(ICloudQuotaObservation).order_by(ICloudQuotaObservation.id.desc())
+            )
+            manifests = session.scalars(
+                select(ICloudCleanupManifest).order_by(ICloudCleanupManifest.id.desc()).limit(10)
+            ).all()
+            last_error = session.get(RuntimeSetting, "icloud_cleanup_last_error")
+            typer.echo(
+                json.dumps(
+                    {
+                        "capacity_relief_enabled": settings.icloud_capacity_relief_enabled,
+                        "milestone_approved": settings.icloud_deletion_milestone_approved,
+                        "last_error_type": (
+                            last_error.value if last_error and last_error.value else None
+                        ),
+                        "latest_quota": (
+                            {
+                                "used_bytes": observation.used_bytes,
+                                "quota_bytes": observation.quota_bytes,
+                                "observed_at": observation.observed_at.isoformat(),
+                            }
+                            if observation
+                            else None
+                        ),
+                        "manifests": [_manifest_payload(manifest) for manifest in manifests],
+                    },
+                    indent=2,
+                )
+            )
+    finally:
+        database.close()
+
+
+@app.command("icloud-cleanup-approve-internal", hidden=True)
+def icloud_cleanup_approve_internal(manifest_id: int, digest: str) -> None:
+    async def run() -> None:
+        settings = Settings()
+        database = _database(settings)
+        try:
+            health = startup_checks(
+                database,
+                settings.active_root,
+                settings.backup_root,
+                settings.staging_root,
+                smart_health_file=settings.smart_health_file,
+                require_smart_health=settings.require_smart_health,
+                recover_expired_jobs=False,
+            )
+            workflow = build_icloud_workflow(settings)
+            gates_ready = (
+                health.healthy
+                and await workflow.cold.available()
+                and _runtime_value(database, "global_deletion_enabled", "false") == "true"
+                and _runtime_value(database, "safety_lock", "true") == "false"
+            )
+            with database.session() as session:
+                _icloud_cleanup(settings).execute(
+                    session, manifest_id, digest, gates_ready=gates_ready
+                )
+            typer.echo(f"iCloud cleanup manifest {manifest_id} completed.")
+        except ICloudCleanupBlocked as error:
+            typer.echo(f"Refused: {error}", err=True)
+            raise typer.Exit(2) from error
+        finally:
+            database.close()
+
+    asyncio.run(run())
+
+
+def _manifest_payload(manifest: ICloudCleanupManifest) -> dict[str, object]:
+    return {
+        "id": manifest.id,
+        "status": manifest.status.value,
+        "digest": manifest.digest,
+        "digest_confirmation": manifest.digest[:12],
+        "used_bytes": manifest.used_bytes,
+        "quota_bytes": manifest.quota_bytes,
+        "target_bytes": manifest.target_bytes,
+        "planned_bytes": manifest.planned_bytes,
+        "asset_count": len(manifest.entries),
+        "expires_at": manifest.expires_at.isoformat(),
+        "failure_reason": manifest.failure_reason,
+    }
+
+
+def _set_session_value(session: Session, key: str, value: str) -> None:
+    setting = session.get(RuntimeSetting, key)
+    if setting is None:
+        session.add(RuntimeSetting(key=key, value=value))
+    else:
+        setting.value = value
 
 
 @app.command("test-vertical-slice", hidden=True)

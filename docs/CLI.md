@@ -92,7 +92,7 @@ expiration and never deletes cloud objects.
 
 Mnema supports one dedicated Apple account and Personal Library. It imports original
 photos, videos, RAW assets, and both Live Photo components. iCloud Drive is unsupported.
-iCloud deletion is absent.
+Guarded Apple-side capacity relief is optional and disabled by default.
 
 The account must have iCloud web access enabled and Advanced Data Protection disabled.
 These are limitations of the pinned `icloudpd` web-access client. Prefer a dedicated
@@ -104,6 +104,7 @@ sudo mnema icloud auth
 sudo mnema icloud preview
 sudo mnema icloud sync
 sudo mnema icloud status
+sudo mnema icloud storage
 ```
 
 Configuration prompts for Apple ID, password, and 2FA. Mnema stores no password or 2FA
@@ -111,9 +112,30 @@ code. Protected session cookies live under `/etc/mnema/icloud-session`. Configur
 authenticates and previews but never starts the first import. First successful explicit
 `mnema icloud sync` arms the daily 03:00 local-time timer.
 
-Each sync uses fixed `icloudpd` copy-mode arguments. Destructive iCloud flags are not
-accepted or exposed. Expired authentication fails closed; re-run `mnema icloud auth`.
-Disabling iCloud stops its timer while preserving sessions and archived files.
+Each sync uses fixed `icloudpd` copy-mode arguments. Its destructive flags are not accepted
+or exposed. Expired authentication fails closed; re-run `mnema icloud auth`. Disabling
+iCloud stops its timer while preserving sessions and archived files.
+
+Enable cleanup proposals explicitly:
+
+```bash
+sudo mnema configure icloud --enabled --capacity-relief
+sudo mnema icloud cleanup preview
+sudo mnema icloud cleanup status
+sudo mnema resume-deletion
+sudo mnema icloud cleanup approve MANIFEST_ID
+```
+
+`preview` creates a 24-hour immutable manifest only when fresh total iCloud usage is at
+least 90%. It chooses oldest verified non-favorite assets toward 80%, capped at 1,000 assets
+and 10% of quota. `approve` displays the manifest and requires its 12-character digest
+prefix. Every safety fact and Apple change tag is revalidated before execution. Assets move
+only to Recently Deleted; both Pi copies and Glacier remain. Any ambiguous result stops the
+batch, enables the safety lock, and requires manual review.
+
+Current build permits quota inspection and manifest review but keeps execution blocked by
+the internal milestone-approval flag. Only a reviewed release produced after the dedicated
+synthetic-account test may set that flag; appliance configuration does not expose it.
 
 ## Service URLs
 
@@ -153,7 +175,19 @@ sudo mnema backup create /safe/path/mnema-config-2026-07-30.tar.gz
 sudo mnema restore config /safe/path/mnema-config-2026-07-30.tar.gz
 ```
 
-Updates accept only a local archive with an independently supplied SHA-256:
+Install latest published GitHub release:
+
+```bash
+sudo mnema update --latest
+```
+
+For unattended maintenance, add `--yes`. Health checks and automatic rollback still apply.
+
+Mnema requires fixed archive/checksum assets, GitHub's SHA-256 asset digest, and agreement
+between both hashes. It streams downloads over validated GitHub HTTPS endpoints, then uses
+the same backup, health-check, and automatic rollback path as local updates.
+
+Offline updates accept a local archive with an independently supplied SHA-256:
 
 ```bash
 sudo mnema update --archive /safe/path/mnema-release.tar.gz --sha256 HASH

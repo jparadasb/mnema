@@ -13,9 +13,11 @@ Prevent unauthorized reads and deletes; never delete a source before independent
 - **Stolen Pi/SSD:** cold copy uses client-side authenticated encryption; recommend host/full-disk encryption; secrets mode `0600`; document physical exposure. Active NAS encryption remains operator responsibility.
 - **Compromised NAS account/ransomware:** SFTPGo sees active data only, never backup repository or secrets; Kopia versions and remote copy provide recovery; least-privilege users.
 - **Compromised Apple/source account:** use a dedicated Apple account; password and MFA
-  remain interactive; protected session cookies are narrowly mounted; iCloud deletion is
-  structurally unavailable. Web access requires Advanced Data Protection to be disabled,
-  so this integration intentionally trades Apple-side protection for appliance access.
+  remain interactive; protected session cookies are narrowly mounted. Optional Apple
+  cleanup is disabled by default and requires fresh pressure, immutable manifest approval,
+  global gate, exact asset/change-tag match, and confirmed Recently Deleted presence. Web
+  access requires Advanced Data Protection to be disabled, so this integration intentionally
+  trades Apple-side protection for appliance access.
 - **Compromised Cloudflare account:** tunnel optional; local emergency access retained;
   public web independently validates Access JWT issuer, audience, RS256 signature, issue
   time, subject, and expiry. Cloudflare account compromise remains an external risk.
@@ -38,6 +40,10 @@ Prevent unauthorized reads and deletes; never delete a source before independent
 Deletion is permitted only when local path/size/hash verify, Kopia and remote restore verification receipts exist, quarantine elapsed, source identity/version is unchanged, active and backup health pass, devices differ, SQLite integrity passes, remote is available, global and source toggles are enabled, run caps pass, and no safety lock exists.
 
 Any missing, stale, ambiguous, or contradictory fact denies deletion.
+
+For Apple cleanup, every component of one cloud asset must satisfy the invariant. Favorites,
+Shared Library, Hidden, and Recently Deleted assets are excluded. Apple ambiguity stops the
+batch and closes the global gate; neither Pi copy nor the Glacier object is deleted.
 
 ## Residual risks
 

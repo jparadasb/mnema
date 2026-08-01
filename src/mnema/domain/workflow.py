@@ -226,6 +226,7 @@ class ArchiveWorkflow:
             session.commit()
         if item.state == ArchiveState.COLD_ARCHIVE_PENDING:
             await self.cold.archive_verified(self._cold_receipt(item))
+            item.cold_archived_at = utcnow()
             transition_item(session, item, ArchiveState.COLD_ARCHIVED, actor="worker")
             session.commit()
         if item.state == ArchiveState.COLD_ARCHIVED:

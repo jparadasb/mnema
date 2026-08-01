@@ -4,6 +4,7 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -15,7 +16,7 @@ from dataclasses import dataclass
 from ipaddress import ip_address
 from pathlib import Path
 from typing import Literal
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from mnema.admin.config import (
     ApplianceConfig,
@@ -93,6 +94,14 @@ class ServiceEndpointReport:
             "services": [endpoint.as_dict() for endpoint in self.endpoints],
             "warnings": list(self.warnings),
         }
+
+
+@dataclass(frozen=True)
+class GitHubRelease:
+    tag: str
+    archive_url: str
+    checksum_url: str
+    archive_digest: str
 
 
 class CommandRunner:
@@ -523,7 +532,7 @@ class ApplianceManager:
     def icloud_runtime_command(
         self,
         command: str,
-        *,
+        *arguments: str,
         capture_output: bool = False,
     ) -> subprocess.CompletedProcess[str]:
         return self.runner.run(
@@ -536,6 +545,7 @@ class ApplianceManager:
                 "--rm",
                 "icloud-runner",
                 command,
+                *arguments,
             ],
             capture_output=capture_output,
         )
@@ -613,6 +623,46 @@ class ApplianceManager:
             ["systemctl", "--no-pager", "list-timers", "mnema-icloud.timer"],
             check=False,
         )
+
+    def icloud_storage(self) -> None:
+        self._require_icloud_session()
+        result = self.icloud_runtime_command("icloud-storage-internal", capture_output=True)
+        print(result.stdout, end="")
+
+    def icloud_cleanup_preview(self) -> None:
+        self._require_capacity_relief()
+        result = self.icloud_runtime_command("icloud-cleanup-preview-internal", capture_output=True)
+        print(result.stdout, end="")
+
+    def icloud_cleanup_status(self) -> None:
+        self._require_icloud_session()
+        result = self.icloud_runtime_command("icloud-cleanup-status-internal", capture_output=True)
+        print(result.stdout, end="")
+
+    def icloud_cleanup_manifest(self, manifest_id: int) -> dict[str, object]:
+        self._require_capacity_relief()
+        result = self.icloud_runtime_command("icloud-cleanup-status-internal", capture_output=True)
+        payload = json.loads(result.stdout)
+        for manifest in payload.get("manifests", []):
+            if manifest.get("id") == manifest_id:
+                return dict(manifest)
+        raise ValueError("iCloud cleanup manifest was not found")
+
+    def icloud_cleanup_approve(self, manifest_id: int, digest: str) -> None:
+        self._require_capacity_relief()
+        with self.locked():
+            self.icloud_runtime_command("icloud-cleanup-approve-internal", str(manifest_id), digest)
+
+    def _require_icloud_session(self) -> None:
+        self.require_root()
+        config = self.config()
+        if not config.icloud.enabled or not self.paths.icloud_session.is_dir():
+            raise RuntimeError("configured iCloud authentication is required")
+
+    def _require_capacity_relief(self) -> None:
+        self._require_icloud_session()
+        if not self.config().icloud.capacity_relief_enabled:
+            raise ValueError("iCloud capacity relief is disabled")
 
     def apply_runtime_policy(self, config: ApplianceConfig) -> None:
         self.runner.run(
@@ -893,6 +943,110 @@ class ApplianceManager:
                 mode=0o600,
             )
         return release
+
+    def latest_github_release(self, repository: str = "jparadasb/mnema") -> GitHubRelease:
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
+            raise ValueError("GitHub repository must use owner/name syntax")
+        with tempfile.TemporaryDirectory(prefix="mnema-release-metadata-") as directory:
+            metadata_path = Path(directory) / "release.json"
+            self._download_https(
+                f"https://api.github.com/repos/{repository}/releases/latest",
+                metadata_path,
+                max_bytes=2 * 1024 * 1024,
+                accept="application/vnd.github+json",
+            )
+            payload = json.loads(metadata_path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise RuntimeError("GitHub release metadata is invalid")
+        tag = payload.get("tag_name")
+        assets = payload.get("assets")
+        if not isinstance(tag, str) or not re.fullmatch(r"v?[0-9][A-Za-z0-9._-]*", tag):
+            raise RuntimeError("GitHub release tag is invalid")
+        if not isinstance(assets, list):
+            raise RuntimeError("GitHub release assets are missing")
+        by_name = {
+            asset.get("name"): asset
+            for asset in assets
+            if isinstance(asset, dict) and isinstance(asset.get("name"), str)
+        }
+        archive = by_name.get("mnema-release.tar.gz")
+        checksum = by_name.get("mnema-release.tar.gz.sha256")
+        if not isinstance(archive, dict) or not isinstance(checksum, dict):
+            raise RuntimeError("latest release lacks Mnema archive or checksum asset")
+        archive_url = archive.get("browser_download_url")
+        checksum_url = checksum.get("browser_download_url")
+        digest = archive.get("digest")
+        if (
+            not isinstance(archive_url, str)
+            or not isinstance(checksum_url, str)
+            or not isinstance(digest, str)
+            or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest)
+        ):
+            raise RuntimeError("latest release lacks a valid GitHub SHA-256 digest")
+        return GitHubRelease(tag, archive_url, checksum_url, digest.removeprefix("sha256:"))
+
+    def update_from_latest_release(self, repository: str = "jparadasb/mnema") -> tuple[str, str]:
+        self.require_root()
+        latest = self.latest_github_release(repository)
+        with tempfile.TemporaryDirectory(prefix="mnema-release-download-") as directory:
+            root = Path(directory)
+            archive = root / "mnema-release.tar.gz"
+            checksum = root / "mnema-release.tar.gz.sha256"
+            self._download_https(latest.archive_url, archive, max_bytes=1024 * 1024 * 1024)
+            self._download_https(latest.checksum_url, checksum, max_bytes=4096)
+            line = checksum.read_text(encoding="ascii").strip()
+            match = re.fullmatch(r"([0-9a-f]{64})  mnema-release\.tar\.gz", line)
+            if match is None:
+                raise RuntimeError("release checksum asset is malformed")
+            expected = match.group(1)
+            if expected != latest.archive_digest:
+                raise RuntimeError("publisher checksum and GitHub digest disagree")
+            release = self.update_from_archive(archive.resolve(), expected)
+        return latest.tag, release
+
+    def _download_https(
+        self,
+        url: str,
+        destination: Path,
+        *,
+        max_bytes: int,
+        accept: str | None = None,
+    ) -> None:
+        parsed = urlsplit(url)
+        host = parsed.hostname or ""
+        if (
+            parsed.scheme != "https"
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.port is not None
+            or not (
+                host in {"api.github.com", "github.com"} or host.endswith(".githubusercontent.com")
+            )
+        ):
+            raise RuntimeError("release URL is not an approved GitHub HTTPS endpoint")
+        arguments = [
+            "curl",
+            "--fail",
+            "--location",
+            "--silent",
+            "--show-error",
+            "--proto",
+            "=https",
+            "--tlsv1.2",
+            "--max-filesize",
+            str(max_bytes),
+            "--output",
+            str(destination),
+        ]
+        if accept:
+            arguments.extend(["--header", f"Accept: {accept}"])
+        arguments.append(url)
+        self.runner.run(arguments)
+        if not destination.is_file() or destination.is_symlink():
+            raise RuntimeError("release download did not produce a regular file")
+        size = destination.stat().st_size
+        if size <= 0 or size > max_bytes:
+            raise RuntimeError("release download size is invalid")
 
     def rollback(self) -> str:
         self.require_root()
