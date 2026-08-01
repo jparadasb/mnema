@@ -14,6 +14,11 @@ targets:
     sources: [MnemaApp, Shared]
     info:
       path: MnemaApp/Info.plist
+      properties:
+        CFBundleDisplayName: Mnema
+        KeychainAccessGroup: $(AppIdentifierPrefix)com.jparadasb.mnema.shared
+        NSFileProviderDomainUsageDescription: Mnema makes your archived files available in the Files app.
+        UILaunchScreen: {}
     entitlements:
       path: MnemaApp/Mnema.entitlements
     settings:
@@ -27,6 +32,13 @@ targets:
     sources: [MnemaFileProvider, Shared]
     info:
       path: MnemaFileProvider/Info.plist
+      properties:
+        CFBundleDisplayName: Mnema Files
+        KeychainAccessGroup: $(AppIdentifierPrefix)com.jparadasb.mnema.shared
+        NSExtension:
+          NSExtensionFileProviderSupportsEnumeration: true
+          NSExtensionPointIdentifier: com.apple.fileprovider-nonui
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).FileProviderExtension
     entitlements:
       path: MnemaFileProvider/MnemaFileProvider.entitlements
     settings:
