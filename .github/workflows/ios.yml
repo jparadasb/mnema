@@ -41,10 +41,8 @@ jobs:
             | grep -F 'CODE_SIGN_ENTITLEMENTS = MnemaApp/Mnema.entitlements'
           xcodebuild -project Mnema.xcodeproj -target MnemaFileProvider -showBuildSettings \
             | grep -F 'CODE_SIGN_ENTITLEMENTS = MnemaFileProvider/MnemaFileProvider.entitlements'
-          plutil -p MnemaApp/Mnema.entitlements \
-            | grep -F 'group.com.jparadasb.mnema'
-          plutil -p MnemaFileProvider/MnemaFileProvider.entitlements \
-            | grep -F 'group.com.jparadasb.mnema'
+          grep -F 'group.com.jparadasb.mnema' MnemaApp/Mnema.entitlements
+          grep -F 'group.com.jparadasb.mnema' MnemaFileProvider/MnemaFileProvider.entitlements
       - working-directory: ios
         run: >-
           xcodebuild build
