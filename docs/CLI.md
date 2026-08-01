@@ -32,6 +32,7 @@ Or configure one boundary:
 sudo mnema configure storage
 sudo mnema configure cold-storage
 sudo mnema configure cloudflare
+sudo mnema configure file-provider
 sudo mnema configure icloud
 sudo mnema configure sftpgo
 sudo mnema configure policy
@@ -73,6 +74,25 @@ The Cloudflare command configures an existing remotely managed tunnel. The opera
 create the Access application, Allow policy, and published hostname in Cloudflare. Only
 Mnema administration is supported through the tunnel. SFTPGo web and raw SFTP remain
 local-only.
+
+## iPhone File Provider
+
+File Provider requires the existing Cloudflare Tunnel plus a separate API hostname routed
+to `http://file-provider-api:8082`. Administration remains protected by Cloudflare Access;
+the Files API uses revocable device credentials so background synchronization does not
+depend on an interactive browser session.
+
+```bash
+sudo mnema configure file-provider --enabled --public-url https://files.example.com --yes
+sudo mnema file-provider project
+sudo mnema file-provider pair
+sudo mnema file-provider devices
+sudo mnema file-provider revoke DEVICE_ID
+```
+
+`project` idempotently exposes existing fully verified archives in read-only collections.
+Inbox accepts file creation only. Uploads become read-only after Kopia, remote restore/hash,
+and Glacier verification. No File Provider command deletes archive content.
 
 ### Scaleway Glacier
 

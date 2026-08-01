@@ -15,6 +15,7 @@ from mnema.admin.config import (
     ApplianceConfig,
     CloudflareConfig,
     ColdStorageConfig,
+    FileProviderConfig,
     ICloudConfig,
     PolicyConfig,
     ServiceConfig,
@@ -44,6 +45,7 @@ icloud_cleanup_app = typer.Typer(
     no_args_is_help=True, help="Preview and approve capacity-driven iCloud cleanup."
 )
 icloud_app.add_typer(icloud_cleanup_app, name="cleanup")
+file_provider_app = typer.Typer(no_args_is_help=True, help="Pair and manage Apple devices.")
 
 
 def _manager() -> ApplianceManager:
@@ -227,6 +229,25 @@ def _cloudflare_token_update(manager: ApplianceManager, token: str) -> dict[Path
     return {destination: f"{token.strip()}\n"}
 
 
+def _prompt_file_provider(
+    current: FileProviderConfig, cloudflare: CloudflareConfig
+) -> FileProviderConfig:
+    enabled = typer.confirm("Enable iPhone File Provider?", default=current.enabled)
+    if not enabled:
+        return FileProviderConfig(enabled=False)
+    if not cloudflare.enabled:
+        raise ValueError("File Provider internet access requires Cloudflare Tunnel")
+    return FileProviderConfig(
+        enabled=True,
+        public_url=typer.prompt(
+            "Public File Provider URL",
+            default=current.public_url or "https://files.example.com",
+        ),
+        max_file_size=current.max_file_size,
+        minimum_free_percent=current.minimum_free_percent,
+    )
+
+
 def _prompt_icloud(current: ICloudConfig) -> ICloudConfig:
     enabled = typer.confirm("Enable read-only iCloud Photos archiving?", default=current.enabled)
     if not enabled:
@@ -275,6 +296,7 @@ def configure_all(
         storage = _prompt_storage(current.storage)
         cold, cold_secrets = _prompt_cold_storage(current.cold_storage, manager)
         cloudflare, token = _prompt_cloudflare(current.cloudflare)
+        file_provider = _prompt_file_provider(current.file_provider, cloudflare)
         icloud = _prompt_icloud(current.icloud)
         sftpgo = SFTPGoConfig(
             username=typer.prompt("SFTPGo username", default=current.sftpgo.username),
@@ -303,6 +325,7 @@ def configure_all(
                 "storage": storage,
                 "cold_storage": cold,
                 "cloudflare": cloudflare,
+                "file_provider": file_provider,
                 "icloud": icloud,
                 "sftpgo": sftpgo,
                 "service": service,
@@ -479,6 +502,93 @@ def configure_sftpgo(
         )
         _save(manager, current.model_copy(update={"sftpgo": value}), yes=yes)
     except (OSError, ValueError, ValidationError, PermissionError) as error:
+        _fail(error)
+
+
+@configure_app.command("file-provider")
+def configure_file_provider(
+    enabled: Annotated[bool | None, typer.Option("--enabled/--disabled")] = None,
+    public_url: Annotated[str | None, typer.Option("--public-url")] = None,
+    max_file_size: Annotated[int | None, typer.Option(min=1)] = None,
+    minimum_free_percent: Annotated[float | None, typer.Option(min=1, max=50)] = None,
+    yes: Annotated[bool, typer.Option("--yes")] = False,
+) -> None:
+    manager = _manager()
+    try:
+        current = manager.config()
+        use_enabled = (
+            enabled
+            if enabled is not None
+            else typer.confirm(
+                "Enable iPhone File Provider?", default=current.file_provider.enabled
+            )
+        )
+        if use_enabled and not current.cloudflare.enabled:
+            raise ValueError("configure Cloudflare before enabling File Provider")
+        value = FileProviderConfig(
+            enabled=use_enabled,
+            public_url=(
+                public_url
+                or (
+                    typer.prompt(
+                        "Public File Provider URL",
+                        default=current.file_provider.public_url or "https://files.example.com",
+                    )
+                    if use_enabled
+                    else ""
+                )
+            ),
+            max_file_size=max_file_size or current.file_provider.max_file_size,
+            minimum_free_percent=(
+                minimum_free_percent or current.file_provider.minimum_free_percent
+            ),
+        )
+        _save(manager, current.model_copy(update={"file_provider": value}), yes=yes)
+    except (OSError, ValueError, ValidationError, PermissionError) as error:
+        _fail(error)
+
+
+@file_provider_app.command("pair")
+def file_provider_pair() -> None:
+    try:
+        result = _manager().file_provider_runtime_command(
+            "file-provider-pair-internal", capture_output=True
+        )
+        typer.echo(result.stdout.strip())
+    except (OSError, ValueError, RuntimeError, PermissionError) as error:
+        _fail(error)
+
+
+@file_provider_app.command("devices")
+def file_provider_devices() -> None:
+    try:
+        result = _manager().file_provider_runtime_command(
+            "file-provider-devices-internal", capture_output=True
+        )
+        typer.echo(result.stdout.strip())
+    except (OSError, ValueError, RuntimeError, PermissionError) as error:
+        _fail(error)
+
+
+@file_provider_app.command("revoke")
+def file_provider_revoke(device_id: str) -> None:
+    try:
+        result = _manager().file_provider_runtime_command(
+            "file-provider-revoke-internal", device_id, capture_output=True
+        )
+        typer.echo(result.stdout.strip())
+    except (OSError, ValueError, RuntimeError, PermissionError) as error:
+        _fail(error)
+
+
+@file_provider_app.command("project")
+def file_provider_project() -> None:
+    try:
+        result = _manager().file_provider_runtime_command(
+            "file-provider-project-internal", capture_output=True
+        )
+        typer.echo(result.stdout.strip())
+    except (OSError, ValueError, RuntimeError, PermissionError) as error:
         _fail(error)
 
 
@@ -758,6 +868,7 @@ def register_admin_commands(app: typer.Typer) -> None:
     app.add_typer(restore_app, name="restore")
     app.add_typer(uninstall_app, name="uninstall")
     app.add_typer(icloud_app, name="icloud")
+    app.add_typer(file_provider_app, name="file-provider")
 
     @app.command("install")
     def install(

@@ -1,0 +1,61 @@
+name: Mnema
+options:
+  bundleIdPrefix: com.jparadasb
+  deploymentTarget:
+    iOS: "16.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.7"
+    DEVELOPMENT_TEAM: ""
+targets:
+  Mnema:
+    type: application
+    platform: iOS
+    sources: [MnemaApp, Shared]
+    info:
+      path: MnemaApp/Info.plist
+      properties:
+        CFBundleDisplayName: Mnema
+        KeychainAccessGroup: $(AppIdentifierPrefix)com.jparadasb.mnema.shared
+        NSFileProviderDomainUsageDescription: Mnema makes your archived files available in the Files app.
+        UILaunchScreen: {}
+    entitlements:
+      path: MnemaApp/Mnema.entitlements
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.jparadasb.mnema
+    dependencies:
+      - target: MnemaFileProvider
+  MnemaFileProvider:
+    type: app-extension
+    platform: iOS
+    sources: [MnemaFileProvider, Shared]
+    info:
+      path: MnemaFileProvider/Info.plist
+      properties:
+        CFBundleDisplayName: Mnema Files
+        KeychainAccessGroup: $(AppIdentifierPrefix)com.jparadasb.mnema.shared
+        NSExtension:
+          NSExtensionFileProviderSupportsEnumeration: true
+          NSExtensionPointIdentifier: com.apple.fileprovider-nonui
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).FileProviderExtension
+    entitlements:
+      path: MnemaFileProvider/MnemaFileProvider.entitlements
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.jparadasb.mnema.fileprovider
+        SKIP_INSTALL: YES
+  MnemaTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [MnemaTests]
+    dependencies:
+      - target: Mnema
+schemes:
+  Mnema:
+    build:
+      targets:
+        Mnema: all
+        MnemaFileProvider: all
+    test:
+      targets: [MnemaTests]

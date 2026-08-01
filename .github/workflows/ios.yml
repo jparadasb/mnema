@@ -1,0 +1,121 @@
+name: iOS
+
+on:
+  pull_request:
+    paths: ["ios/**", ".github/workflows/ios.yml"]
+  push:
+    branches: [main]
+    paths: ["ios/**", ".github/workflows/ios.yml"]
+  workflow_dispatch:
+    inputs:
+      upload_testflight:
+        description: Upload signed archive to TestFlight
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: [self-hosted, macOS, X64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-xcodegen
+      - name: Select full Xcode installation
+        run: |
+          xcode_app="$(find /Applications -maxdepth 1 -type d -name 'Xcode*.app' -print | sort | tail -n 1)"
+          if [[ -z "$xcode_app" ]]; then
+            echo '::error::A full Xcode installation is required on the macOS runner.'
+            exit 1
+          fi
+          printf 'DEVELOPER_DIR=%s/Contents/Developer\n' "$xcode_app" >> "$GITHUB_ENV"
+          sw_vers
+          "$xcode_app/Contents/Developer/usr/bin/xcodebuild" -version
+      - working-directory: ios
+        run: xcodegen generate
+      - working-directory: ios
+        run: >-
+          xcodebuild build
+          -project Mnema.xcodeproj
+          -scheme Mnema
+          -sdk iphonesimulator
+          -destination 'generic/platform=iOS Simulator'
+          -derivedDataPath "$RUNNER_TEMP/MnemaDerivedData"
+          CODE_SIGNING_ALLOWED=NO
+      - name: Install in a temporary simulator
+        run: |
+          simulator_id="$(xcrun simctl create \
+            "Mnema CI $GITHUB_RUN_ID" \
+            com.apple.CoreSimulator.SimDeviceType.iPhone-14)"
+          cleanup() {
+            xcrun simctl shutdown "$simulator_id" >/dev/null 2>&1 || true
+            xcrun simctl delete "$simulator_id" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          xcrun simctl boot "$simulator_id"
+          xcrun simctl bootstatus "$simulator_id" -b
+          app_path="$RUNNER_TEMP/MnemaDerivedData/Build/Products/Debug-iphonesimulator/Mnema.app"
+          extension_path="$app_path/PlugIns/MnemaFileProvider.appex"
+          plutil -p "$app_path/Info.plist"
+          plutil -p "$extension_path/Info.plist"
+          if ! xcrun simctl install "$simulator_id" "$app_path"; then
+            xcrun simctl spawn "$simulator_id" log show \
+              --last 3m \
+              --style compact \
+              --predicate 'eventMessage CONTAINS[c] "mnema" OR eventMessage CONTAINS[c] "placeholder"' \
+              | tail -n 200
+            exit 1
+          fi
+
+  testflight:
+    if: github.event_name == 'workflow_dispatch' && inputs.upload_testflight
+    needs: build
+    runs-on: [self-hosted, macOS, X64]
+    environment: testflight
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-xcodegen
+      - name: Select full Xcode installation
+        run: |
+          xcode_app="$(find /Applications -maxdepth 1 -type d -name 'Xcode*.app' -print | sort | tail -n 1)"
+          if [[ -z "$xcode_app" ]]; then
+            echo '::error::A full Xcode installation is required on the macOS runner.'
+            exit 1
+          fi
+          printf 'DEVELOPER_DIR=%s/Contents/Developer\n' "$xcode_app" >> "$GITHUB_ENV"
+      - working-directory: ios
+        run: xcodegen generate
+      - name: Install App Store Connect API key
+        env:
+          APP_STORE_CONNECT_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_KEY_BASE64 }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+        run: |
+          install -d -m 0700 "$HOME/.appstoreconnect/private_keys"
+          printf '%s' "$APP_STORE_CONNECT_KEY_BASE64" | base64 --decode > "$HOME/.appstoreconnect/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8"
+          chmod 0600 "$HOME/.appstoreconnect/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8"
+      - name: Archive and upload
+        working-directory: ios
+        env:
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          xcodebuild archive \
+            -project Mnema.xcodeproj \
+            -scheme Mnema \
+            -archivePath "$RUNNER_TEMP/Mnema.xcarchive" \
+            -destination 'generic/platform=iOS' \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$HOME/.appstoreconnect/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8" \
+            -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
+            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/Mnema.xcarchive" \
+            -exportPath "$RUNNER_TEMP/Mnema-export" \
+            -exportOptionsPlist ExportOptions.plist \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$HOME/.appstoreconnect/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8" \
+            -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
+            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"

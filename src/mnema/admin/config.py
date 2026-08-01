@@ -138,6 +138,31 @@ class CloudflareConfig(BaseModel):
         return self
 
 
+class FileProviderConfig(BaseModel):
+    enabled: bool = False
+    public_url: str = ""
+    max_file_size: int = Field(default=53_687_091_200, gt=0)
+    minimum_free_percent: float = Field(default=10, ge=1, le=50)
+
+    @model_validator(mode="after")
+    def enabled_configuration_is_complete(self) -> FileProviderConfig:
+        if not self.enabled:
+            return self
+        parsed = urlsplit(self.public_url)
+        if (
+            parsed.scheme != "https"
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.port is not None
+            or parsed.path not in {"", "/"}
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError("File Provider public URL must be an HTTPS origin without a path")
+        return self
+
+
 class ICloudConfig(BaseModel):
     enabled: bool = False
     apple_id: str = ""
@@ -236,10 +261,17 @@ class ApplianceConfig(BaseModel):
     storage: StorageConfig = Field(default_factory=StorageConfig)
     cold_storage: ColdStorageConfig = Field(default_factory=ColdStorageConfig)
     cloudflare: CloudflareConfig = Field(default_factory=CloudflareConfig)
+    file_provider: FileProviderConfig = Field(default_factory=FileProviderConfig)
     icloud: ICloudConfig = Field(default_factory=ICloudConfig)
     sftpgo: SFTPGoConfig = Field(default_factory=SFTPGoConfig)
     service: ServiceConfig = Field(default_factory=ServiceConfig)
     policy: PolicyConfig = Field(default_factory=PolicyConfig)
+
+    @model_validator(mode="after")
+    def file_provider_uses_cloudflare(self) -> ApplianceConfig:
+        if self.file_provider.enabled and not self.cloudflare.enabled:
+            raise ValueError("File Provider internet access requires Cloudflare Tunnel")
+        return self
 
     def runtime_environment(self) -> dict[str, str]:
         profiles: list[str] = []
@@ -247,6 +279,8 @@ class ApplianceConfig(BaseModel):
             profiles.append("integration")
         if self.cloudflare.enabled:
             profiles.append("cloudflare")
+        if self.file_provider.enabled:
+            profiles.append("file-provider")
         environment = {
             "MNEMA_DATABASE_URL": "sqlite:////var/lib/mnema/mnema.db",
             "MNEMA_ACTIVE_ROOT": "/data/active",
@@ -290,6 +324,13 @@ class ApplianceConfig(BaseModel):
             "MNEMA_CLOUDFLARE_TEAM_DOMAIN": self.cloudflare.team_domain,
             "MNEMA_CLOUDFLARE_AUDIENCE": self.cloudflare.audience,
             "MNEMA_CLOUDFLARE_ADMIN_HOSTNAME": self.cloudflare.admin_hostname,
+            "MNEMA_FILE_PROVIDER_ENABLED": str(self.file_provider.enabled).lower(),
+            "MNEMA_FILE_PROVIDER_PUBLIC_URL": self.file_provider.public_url.rstrip("/"),
+            "MNEMA_FILE_PROVIDER_UPLOAD_ROOT": "/data/active/.mnema-file-provider",
+            "MNEMA_FILE_PROVIDER_MAX_FILE_SIZE": str(self.file_provider.max_file_size),
+            "MNEMA_FILE_PROVIDER_MINIMUM_FREE_PERCENT": str(
+                self.file_provider.minimum_free_percent
+            ),
             "MNEMA_ICLOUD_ENABLED": str(self.icloud.enabled).lower(),
             "MNEMA_ICLOUD_APPLE_ID": self.icloud.apple_id,
             "MNEMA_ICLOUD_LIBRARY": "PrimarySync",

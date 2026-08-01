@@ -71,6 +71,11 @@ class Settings(BaseSettings):
     cloudflare_team_domain: str = ""
     cloudflare_audience: str = ""
     cloudflare_admin_hostname: str = ""
+    file_provider_enabled: bool = False
+    file_provider_public_url: str = ""
+    file_provider_upload_root: Path = Path("/data/active/.mnema-file-provider")
+    file_provider_max_file_size: Annotated[int, Field(gt=0)] = 53_687_091_200
+    file_provider_minimum_free_percent: Annotated[float, Field(ge=1, le=50)] = 10
     icloud_enabled: bool = False
     icloud_apple_id: str = ""
     icloud_library: Literal["PrimarySync"] = "PrimarySync"
@@ -94,6 +99,7 @@ class Settings(BaseSettings):
         "rclone_config_file",
         "icloud_session_directory",
         "icloud_import_root",
+        "file_provider_upload_root",
     )
     @classmethod
     def absolute_paths(cls, value: Path) -> Path:
@@ -120,6 +126,26 @@ class Settings(BaseSettings):
             raise ValueError("Cloudflare Access requires a valid HTTPS team domain")
         if not self.cloudflare_audience:
             raise ValueError("Cloudflare Access audience is required")
+        return self
+
+    @model_validator(mode="after")
+    def file_provider_configuration_is_safe(self) -> Settings:
+        if not self.file_provider_enabled:
+            return self
+        if not self.file_provider_upload_root.is_relative_to(self.active_root):
+            raise ValueError("File Provider upload root must remain beneath active storage")
+        public = urlsplit(self.file_provider_public_url)
+        if (
+            public.scheme != "https"
+            or not public.hostname
+            or public.username is not None
+            or public.password is not None
+            or public.port is not None
+            or public.path not in {"", "/"}
+            or public.query
+            or public.fragment
+        ):
+            raise ValueError("File Provider requires an HTTPS public URL without a path")
         return self
 
     @model_validator(mode="after")

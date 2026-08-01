@@ -193,6 +193,32 @@ remains LAN-only.
 the actual local bind and SSH-tunnel guidance. It also lists reachable SFTP endpoints and
 marks services `running`, `stopped`, or `unknown`.
 
+## iPhone Files integration
+
+Mnema includes an iOS 17 replicated File Provider client and a disabled-by-default API.
+It exposes verified archives read-only and accepts new files through an append-only Inbox.
+Uploads are streamed into active-storage staging, independently hashed, and remain in
+Inbox until the normal Kopia, encrypted remote verification, and Glacier transition have
+all succeeded. The API exposes no file deletion or content-replacement operation.
+
+Configure a second public hostname on the existing remotely managed Cloudflare Tunnel,
+routed to `http://file-provider-api:8082`, then enable and pair a device:
+
+```bash
+sudo mnema configure file-provider \
+  --enabled \
+  --public-url https://files.example.com \
+  --yes
+sudo mnema file-provider project
+sudo mnema file-provider pair
+sudo mnema file-provider devices
+mnema urls
+```
+
+The pairing code is single-use and expires after ten minutes. The iOS host app exchanges
+it for short-lived access and rotating refresh credentials stored in the shared Keychain.
+Build and TestFlight instructions live in [`ios/README.md`](ios/README.md).
+
 ## CLI overview
 
 ```text
@@ -202,6 +228,8 @@ mnema start|stop|restart              Control the stack
 mnema configure                       Run the guided configuration
 mnema config show|validate|diff       Inspect desired state safely
 mnema urls [--json]                   Show reachable service endpoints
+mnema file-provider pair|devices      Pair and inspect Apple devices
+mnema file-provider revoke DEVICE_ID  Revoke one paired Apple device
 mnema icloud auth|preview|sync|status Manage iCloud imports
 mnema icloud storage|cleanup ...      Inspect quota and approve guarded cleanup
 mnema backup create PATH              Back up configuration and secrets
