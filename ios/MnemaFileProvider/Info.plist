@@ -10,7 +10,7 @@
   <key>CFBundlePackageType</key><string>XPC!</string>
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
   <key>CFBundleVersion</key><string>1</string>
-  <key>KeychainAccessGroup</key><string>$(AppIdentifierPrefix)com.jparadasb.mnema.shared</string>
+  <key>KeychainAccessGroup</key><string>group.com.jparadasb.mnema</string>
   <key>NSExtension</key><dict>
     <key>NSExtensionPointIdentifier</key><string>com.apple.fileprovider-nonui</string>
     <key>NSExtensionPrincipalClass</key><string>$(PRODUCT_MODULE_NAME).FileProviderExtension</string>
