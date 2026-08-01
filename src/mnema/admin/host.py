@@ -205,7 +205,7 @@ class ApplianceManager:
                 atomic_write(self.paths.environment, render_environment(config), mode=0o600)
                 self._write_icloud_units(config)
                 for path, secret_content in secret_updates.items():
-                    atomic_write(path, secret_content, mode=0o640)
+                    self._write_secret(path, secret_content)
                 self.runner.run(
                     [
                         "docker",
@@ -235,11 +235,17 @@ class ApplianceManager:
                 self.runner.run(["systemctl", "daemon-reload"], check=False)
                 for path, previous_secret in previous_secrets.items():
                     self._restore_file(path, previous_secret, 0o640)
+                    if path.is_file():
+                        os.chown(path, -1, self.paths.secrets.stat().st_gid)
                 if self.is_active():
                     self.restart()
                     if self.paths.config.is_file():
                         self.apply_runtime_policy(self.config())
                 raise
+
+    def _write_secret(self, path: Path, content: str) -> None:
+        atomic_write(path, content, mode=0o640)
+        os.chown(path, -1, self.paths.secrets.stat().st_gid)
 
     def _write_icloud_units(self, config: ApplianceConfig) -> None:
         atomic_write(
@@ -421,6 +427,19 @@ class ApplianceManager:
             if config.service.local_bind_address == "127.0.0.1":
                 warnings.append("Web is localhost-only. Use: ssh -L 8080:127.0.0.1:8080 USER@HOST")
 
+        if config.file_provider.enabled:
+            endpoints.append(
+                ServiceEndpoint(
+                    service="mnema-files-api",
+                    url=config.file_provider.public_url.rstrip("/"),
+                    scope="internet",
+                    state=self._service_state(
+                        running_services,
+                        required={"file-provider-api", "cloudflared"},
+                    ),
+                )
+            )
+
         self._append_bound_endpoints(
             endpoints=endpoints,
             warnings=warnings,
@@ -559,6 +578,31 @@ class ApplianceManager:
 
     def runtime_command(self, command: str) -> None:
         self.runner.run(["docker", "exec", "mnema-web-1", "mnema", command])
+
+    def file_provider_runtime_command(
+        self,
+        command: str,
+        *arguments: str,
+        capture_output: bool = False,
+    ) -> subprocess.CompletedProcess[str]:
+        config = self.config()
+        if not config.file_provider.enabled:
+            raise ValueError("File Provider is disabled")
+        return self.runner.run(
+            [
+                "docker",
+                "compose",
+                "-f",
+                str(self.paths.compose),
+                "exec",
+                "-T",
+                "file-provider-api",
+                "mnema",
+                command,
+                *arguments,
+            ],
+            capture_output=capture_output,
+        )
 
     def icloud_runtime_command(
         self,

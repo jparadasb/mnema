@@ -101,7 +101,7 @@ install -d -o mnema -g mnema -m 0750 \
   "${DATA_ROOT}/sftpgo-home"
 install -d -o mnema -g mnema -m 0750 "${MNEMA_ACTIVE_ROOT}/.mnema-staging"
 install -d -o mnema -g mnema -m 0750 "${MNEMA_SOURCE_ROOT:-${DATA_ROOT}/test-source}"
-install -d -o root -g mnema -m 0750 "${SECRET_ROOT}"
+install -d -o root -g mnema -m 2750 "${SECRET_ROOT}"
 install -d -o mnema -g mnema -m 0700 "${ICLOUD_SESSION_ROOT}"
 
 script_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"

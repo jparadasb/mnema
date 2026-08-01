@@ -1,0 +1,78 @@
+name: iOS
+
+on:
+  pull_request:
+    paths: ["ios/**", ".github/workflows/ios.yml"]
+  push:
+    branches: [main]
+    paths: ["ios/**", ".github/workflows/ios.yml"]
+  workflow_dispatch:
+    inputs:
+      upload_testflight:
+        description: Upload signed archive to TestFlight
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: [self-hosted, macOS, X64]
+    steps:
+      - uses: actions/checkout@v4
+      - run: command -v xcodegen >/dev/null || brew install xcodegen
+      - working-directory: ios
+        run: xcodegen generate
+      - working-directory: ios
+        run: >-
+          xcodebuild build
+          -project Mnema.xcodeproj
+          -scheme Mnema
+          -sdk iphonesimulator
+          -destination 'generic/platform=iOS Simulator'
+          CODE_SIGNING_ALLOWED=NO
+
+  testflight:
+    if: github.event_name == 'workflow_dispatch' && inputs.upload_testflight
+    needs: build
+    runs-on: [self-hosted, macOS, X64]
+    environment: testflight
+    steps:
+      - uses: actions/checkout@v4
+      - run: command -v xcodegen >/dev/null || brew install xcodegen
+      - working-directory: ios
+        run: xcodegen generate
+      - name: Install App Store Connect API key
+        env:
+          APP_STORE_CONNECT_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_KEY_BASE64 }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+        run: |
+          install -d -m 0700 "$HOME/.appstoreconnect/private_keys"
+          printf '%s' "$APP_STORE_CONNECT_KEY_BASE64" | base64 --decode > "$HOME/.appstoreconnect/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8"
+          chmod 0600 "$HOME/.appstoreconnect/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8"
+      - name: Archive and upload
+        working-directory: ios
+        env:
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          xcodebuild archive \
+            -project Mnema.xcodeproj \
+            -scheme Mnema \
+            -archivePath "$RUNNER_TEMP/Mnema.xcarchive" \
+            -destination 'generic/platform=iOS' \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$HOME/.appstoreconnect/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8" \
+            -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
+            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/Mnema.xcarchive" \
+            -exportPath "$RUNNER_TEMP/Mnema-export" \
+            -exportOptionsPlist ExportOptions.plist \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$HOME/.appstoreconnect/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8" \
+            -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
+            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"

@@ -29,10 +29,13 @@ from mnema.domain.factory import build_icloud_workflow, build_local_workflow
 from mnema.domain.icloud_cleanup import ICloudCleanupBlocked, ICloudCleanupService
 from mnema.domain.states import ArchiveState
 from mnema.domain.workflow import ArchiveWorkflow
+from mnema.file_provider.auth import create_pairing_code, revoke_device
+from mnema.file_provider.service import project_verified_archives
 from mnema.jobs import Database
 from mnema.jobs.models import (
     ArchiveItem,
     AuditEvent,
+    FileProviderDevice,
     ICloudCleanupManifest,
     ICloudQuotaObservation,
     Job,
@@ -347,6 +350,73 @@ def web(
 @app.command()
 def worker() -> None:
     run_worker()
+
+
+@app.command("file-provider-api", hidden=True)
+def file_provider_api(
+    host: str = "0.0.0.0",  # noqa: S104 - container server accepts tunnel traffic
+    port: int = 8082,
+) -> None:
+    from mnema.file_provider import create_file_provider_app
+
+    settings = Settings()
+    if not settings.file_provider_enabled:
+        raise typer.BadParameter("File Provider is disabled")
+    uvicorn.run(create_file_provider_app(settings), host=host, port=port)
+
+
+@app.command("file-provider-pair-internal", hidden=True)
+def file_provider_pair_internal() -> None:
+    settings = Settings()
+    if not settings.file_provider_enabled:
+        raise typer.BadParameter("File Provider is disabled")
+    database = _database(settings)
+    with database.session() as session:
+        code = create_pairing_code(session)
+    typer.echo(json.dumps({"url": settings.file_provider_public_url, "code": code}))
+
+
+@app.command("file-provider-devices-internal", hidden=True)
+def file_provider_devices_internal() -> None:
+    database = _database(Settings())
+    with database.session() as session:
+        devices = session.scalars(
+            select(FileProviderDevice).order_by(FileProviderDevice.created_at)
+        ).all()
+        typer.echo(
+            json.dumps(
+                [
+                    {
+                        "id": device.id,
+                        "name": device.name,
+                        "created_at": device.created_at.isoformat(),
+                        "last_used_at": device.last_used_at.isoformat()
+                        if device.last_used_at
+                        else None,
+                        "revoked": device.revoked_at is not None,
+                    }
+                    for device in devices
+                ],
+                indent=2,
+            )
+        )
+
+
+@app.command("file-provider-revoke-internal", hidden=True)
+def file_provider_revoke_internal(device_id: str) -> None:
+    database = _database(Settings())
+    with database.session() as session:
+        if not revoke_device(session, device_id):
+            raise typer.BadParameter("File Provider device does not exist")
+    typer.echo("Device revoked.")
+
+
+@app.command("file-provider-project-internal", hidden=True)
+def file_provider_project_internal() -> None:
+    database = _database(Settings())
+    with database.session() as session:
+        count = project_verified_archives(session)
+    typer.echo(json.dumps({"projected": count}))
 
 
 def _icloudpd_arguments(settings: Settings) -> list[str]:

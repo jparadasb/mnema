@@ -77,6 +77,43 @@ services:
     depends_on:
       worker:
         condition: service_started
+  file-provider-api:
+    image: mnema:0.1.0
+    profiles: ["file-provider"]
+    command: ["file-provider-api", "--host", "0.0.0.0", "--port", "8082"]
+    restart: unless-stopped
+    env_file: [.env]
+    ports: ["127.0.0.1:8082:8082"]
+    volumes:
+      - type: bind
+        source: ${MNEMA_HOST_CONFIG_ROOT:-./data/config}
+        target: /var/lib/mnema
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${MNEMA_HOST_ACTIVE_ROOT:-./data/active}
+        target: /data/active
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${MNEMA_HOST_BACKUP_ROOT:-./data/backup}
+        target: /data/backup
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${MNEMA_HOST_SOURCE_ROOT:-./data/test-source}
+        target: /data/test-source
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ./secrets
+        target: /run/secrets
+        read_only: true
+        bind: {create_host_path: false}
+    read_only: true
+    tmpfs: ["/tmp:mode=1777,size=128m"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      worker:
+        condition: service_started
   worker:
     image: mnema:0.1.0
     command: ["worker"]
@@ -187,6 +224,7 @@ services:
   cloudflared:
     image: cloudflare/cloudflared:2025.7.0
     profiles: ["cloudflare"]
+    user: "10001:10001"
     command: ["tunnel", "--no-autoupdate", "run"]
     environment:
       TUNNEL_TOKEN_FILE: /run/secrets/cloudflare_tunnel_token

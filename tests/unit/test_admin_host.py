@@ -189,6 +189,20 @@ def test_secret_update_rolls_back_with_failed_configuration(
     assert secret.read_text(encoding="utf-8") == "previous-token\n"
 
 
+def test_secret_update_inherits_secret_directory_group(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager, config, _ = configured_manager(tmp_path, monkeypatch)
+    secret = manager.paths.secrets / "cloudflare_tunnel_token"
+    secret.parent.mkdir(parents=True)
+
+    manager.save_config(config, secret_updates={secret: "replacement-token\n"})
+
+    assert secret.stat().st_gid == secret.parent.stat().st_gid
+    assert secret.stat().st_mode & 0o777 == 0o640
+
+
 def test_release_update_and_rollback_use_verified_archive(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -246,3 +246,95 @@ class ICloudCleanupEntry(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     manifest: Mapped[ICloudCleanupManifest] = relationship(back_populates="entries")
     asset: Mapped[ICloudAsset] = relationship()
+
+
+class FileProviderItemKind(StrEnum):
+    FILE = "FILE"
+    FOLDER = "FOLDER"
+
+
+class FileProviderItemStatus(StrEnum):
+    READY = "READY"
+    PROCESSING = "PROCESSING"
+    FAILED = "FAILED"
+
+
+class FileProviderItem(Base):
+    __tablename__ = "file_provider_items"
+    __table_args__ = (Index("ix_file_provider_parent_name", "parent_id", "name", unique=True),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    parent_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    name: Mapped[str] = mapped_column(Text)
+    kind: Mapped[FileProviderItemKind] = mapped_column(
+        Enum(FileProviderItemKind, native_enum=False)
+    )
+    status: Mapped[FileProviderItemStatus] = mapped_column(
+        Enum(FileProviderItemStatus, native_enum=False), default=FileProviderItemStatus.READY
+    )
+    archive_item_id: Mapped[int | None] = mapped_column(ForeignKey("archive_items.id"), unique=True)
+    size: Mapped[int] = mapped_column(BigInteger, default=0)
+    content_type: Mapped[str] = mapped_column(String(255), default="application/octet-stream")
+    content_version: Mapped[str] = mapped_column(String(64), default="")
+    metadata_version: Mapped[int] = mapped_column(BigInteger, default=1)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    modified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    archive_item: Mapped[ArchiveItem | None] = relationship()
+
+
+class FileProviderChange(Base):
+    __tablename__ = "file_provider_changes"
+
+    sequence: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    item_id: Mapped[str] = mapped_column(String(64), index=True)
+    operation: Mapped[str] = mapped_column(String(16), default="UPSERT")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class FileProviderUploadStatus(StrEnum):
+    OPEN = "OPEN"
+    SEALING = "SEALING"
+    SEALED = "SEALED"
+    FAILED = "FAILED"
+
+
+class FileProviderUpload(Base):
+    __tablename__ = "file_provider_uploads"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    item_id: Mapped[str] = mapped_column(ForeignKey("file_provider_items.id"), unique=True)
+    archive_item_id: Mapped[int] = mapped_column(ForeignKey("archive_items.id"), unique=True)
+    expected_size: Mapped[int] = mapped_column(BigInteger)
+    received_size: Mapped[int] = mapped_column(BigInteger, default=0)
+    expected_sha256: Mapped[str | None] = mapped_column(String(64))
+    status: Mapped[FileProviderUploadStatus] = mapped_column(
+        Enum(FileProviderUploadStatus, native_enum=False), default=FileProviderUploadStatus.OPEN
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class FileProviderPairingCode(Base):
+    __tablename__ = "file_provider_pairing_codes"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    code_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class FileProviderDevice(Base):
+    __tablename__ = "file_provider_devices"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(100))
+    refresh_token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    refresh_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
