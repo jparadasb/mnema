@@ -10,6 +10,7 @@ import sqlite3
 import subprocess
 import tarfile
 import tempfile
+import time
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -218,7 +219,7 @@ class ApplianceManager:
                 self._reconcile_icloud_timer(config)
                 if self.is_active():
                     self.restart()
-                    self.runner.run(["curl", "--fail", "--silent", "http://127.0.0.1:8080/healthz"])
+                    self._wait_for_health()
                     self.verify_services(config)
                     if (
                         previous_appliance is None
@@ -312,7 +313,7 @@ class ApplianceManager:
         try:
             if self.paths.config.is_file():
                 config = self.config()
-                self.runner.run(["curl", "--fail", "--silent", "http://127.0.0.1:8080/healthz"])
+                self._wait_for_health()
                 self.verify_services(config)
                 self.runtime_command("cold-storage-check")
                 self.apply_runtime_policy(config)
@@ -328,6 +329,36 @@ class ApplianceManager:
     def restart(self) -> None:
         self.require_root()
         self.runner.run(["systemctl", "restart", "mnema.service"])
+
+    def _wait_for_health(self, *, timeout_seconds: float = 90.0) -> None:
+        deadline = time.monotonic() + timeout_seconds
+        health_command = ["curl", "--fail", "--silent", "http://127.0.0.1:8080/healthz"]
+        while True:
+            result = self.runner.run(health_command, check=False)
+            if result.returncode == 0:
+                return
+            if time.monotonic() >= deadline:
+                raise RuntimeError("Mnema did not become healthy before the startup deadline")
+            time.sleep(2)
+
+    def _force_recreate_stack(self) -> None:
+        self.runner.run(
+            [
+                "docker",
+                "compose",
+                "-f",
+                str(self.paths.compose),
+                "up",
+                "-d",
+                "--force-recreate",
+                "--remove-orphans",
+            ]
+        )
+
+    def _start_rollback_stack(self) -> None:
+        self.runner.run(["systemctl", "start", "mnema.service"])
+        self._force_recreate_stack()
+        self._wait_for_health()
 
     def enable(self) -> None:
         self.require_root()
@@ -853,7 +884,7 @@ class ApplianceManager:
         self._write_icloud_units(config)
         self._reconcile_icloud_timer(config)
         self.restart()
-        self.runner.run(["curl", "--fail", "--silent", "http://127.0.0.1:8080/healthz"])
+        self._wait_for_health()
         self.verify_services(config)
         self.runtime_command("cold-storage-check")
         self.apply_runtime_policy(config)
@@ -923,14 +954,13 @@ class ApplianceManager:
             try:
                 if was_active:
                     self.start()
-                    self.runner.run(["curl", "--fail", "--silent", "http://127.0.0.1:8080/healthz"])
             except Exception:
                 failed = self.paths.install_root.with_name(f"mnema.failed-{release}")
                 os.replace(self.paths.install_root, failed)
                 os.replace(previous, self.paths.install_root)
                 self.runner.run(["docker", "tag", f"mnema:rollback-{release}", "mnema:0.1.0"])
                 if was_active:
-                    self.start()
+                    self._start_rollback_stack()
                 raise
             metadata = {
                 "release": release,
@@ -1079,12 +1109,11 @@ class ApplianceManager:
             try:
                 if was_active:
                     self.start()
-                    self.runner.run(["curl", "--fail", "--silent", "http://127.0.0.1:8080/healthz"])
             except Exception:
                 os.replace(self.paths.install_root, previous)
                 os.replace(failed, self.paths.install_root)
                 if was_active:
-                    self.start()
+                    self._start_rollback_stack()
                 raise
             metadata_path.unlink()
         return release

@@ -222,6 +222,48 @@ def test_release_update_and_rollback_use_verified_archive(
     )
 
 
+def test_health_wait_retries_and_rollback_forces_container_recreation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class HealthRunner(FakeRunner):
+        def __init__(self) -> None:
+            super().__init__()
+            self.health_results = iter((7, 0, 0))
+
+        def run(
+            self,
+            arguments: list[str] | tuple[str, ...],
+            *,
+            check: bool = True,
+            capture_output: bool = False,
+        ) -> subprocess.CompletedProcess[str]:
+            values = list(arguments)
+            if values and values[0] == "curl":
+                self.arguments.append(values)
+                return subprocess.CompletedProcess(values, next(self.health_results), "", "")
+            return super().run(values, check=check, capture_output=capture_output)
+
+    runner = HealthRunner()
+    manager = ApplianceManager(appliance_paths(tmp_path), runner)
+    monkeypatch.setattr("mnema.admin.host.time.sleep", lambda _seconds: None)
+
+    manager._wait_for_health(timeout_seconds=1)
+    manager._start_rollback_stack()
+
+    assert sum(arguments[0] == "curl" for arguments in runner.arguments) == 3
+    assert [
+        "docker",
+        "compose",
+        "-f",
+        str(manager.paths.compose),
+        "up",
+        "-d",
+        "--force-recreate",
+        "--remove-orphans",
+    ] in runner.arguments
+
+
 def test_latest_release_requires_github_digest_and_matching_checksum(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
