@@ -57,7 +57,7 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
         completionHandler: @escaping (NSFileProviderItem?, NSFileProviderItemFields, Bool, Error?) -> Void
     ) -> Progress {
         let progress = Progress(totalUnitCount: 1)
-        completionHandler(nil, changedFields, false, NSFileProviderError(.featureUnsupported))
+        completionHandler(nil, changedFields, false, CocoaError(.featureUnsupported))
         return progress
     }
 
@@ -69,7 +69,7 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
         completionHandler: @escaping (Error?) -> Void
     ) -> Progress {
         let progress = Progress(totalUnitCount: 1)
-        completionHandler(NSFileProviderError(.featureUnsupported))
+        completionHandler(CocoaError(.featureUnsupported))
         return progress
     }
 
@@ -83,7 +83,7 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
     ) -> Progress {
         let progress = Progress(totalUnitCount: 1)
         guard itemTemplate.parentItemIdentifier.rawValue == "inbox", let url else {
-            completionHandler(nil, [], false, NSFileProviderError(.featureUnsupported))
+            completionHandler(nil, [], false, CocoaError(.featureUnsupported))
             return progress
         }
         Task {
@@ -91,7 +91,7 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
                 let identifier = try await client.upload(
                     file: url,
                     name: itemTemplate.filename,
-                    contentType: itemTemplate.typeIdentifier
+                    contentType: itemTemplate.typeIdentifier ?? UTType.data.identifier
                 )
                 let item = try await client.item(identifier)
                 progress.completedUnitCount = 1
