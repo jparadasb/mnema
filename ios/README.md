@@ -4,6 +4,17 @@ Private iOS 17+ SwiftUI app and replicated File Provider extension. Generate the
 project with `xcodegen generate`, set the Apple development team, enable App Groups and
 File Provider for both identifiers, then build the `Mnema` scheme.
 
+On macOS 12, install the same pinned XcodeGen release used by CI without Homebrew or
+MacPorts:
+
+```bash
+./scripts/install-xcodegen-macos.sh
+export PATH="$HOME/.local/bin:$PATH"
+cd ios
+xcodegen generate
+open Mnema.xcodeproj
+```
+
 Both targets must include the `group.com.jparadasb.mnema` App Group in Signing &
 Capabilities. Mnema uses that App Group as its shared Keychain access group, so the host
 app and File Provider extension can access the same device credentials.
