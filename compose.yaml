@@ -81,6 +81,14 @@ services:
     image: mnema:0.1.0
     profiles: ["file-provider"]
     command: ["file-provider-api", "--host", "0.0.0.0", "--port", "8082"]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8082/healthz', timeout=3)",
+        ]
     restart: unless-stopped
     env_file: [.env]
     ports: ["127.0.0.1:8082:8082"]
