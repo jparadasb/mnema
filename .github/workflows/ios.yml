@@ -55,9 +55,18 @@ jobs:
           trap cleanup EXIT
           xcrun simctl boot "$simulator_id"
           xcrun simctl bootstatus "$simulator_id" -b
-          xcrun simctl install \
-            "$simulator_id" \
-            "$RUNNER_TEMP/MnemaDerivedData/Build/Products/Debug-iphonesimulator/Mnema.app"
+          app_path="$RUNNER_TEMP/MnemaDerivedData/Build/Products/Debug-iphonesimulator/Mnema.app"
+          extension_path="$app_path/PlugIns/MnemaFileProvider.appex"
+          plutil -p "$app_path/Info.plist"
+          plutil -p "$extension_path/Info.plist"
+          if ! xcrun simctl install "$simulator_id" "$app_path"; then
+            xcrun simctl spawn "$simulator_id" log show \
+              --last 3m \
+              --style compact \
+              --predicate 'eventMessage CONTAINS[c] "mnema" OR eventMessage CONTAINS[c] "placeholder"' \
+              | tail -n 200
+            exit 1
+          fi
 
   testflight:
     if: github.event_name == 'workflow_dispatch' && inputs.upload_testflight
