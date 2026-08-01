@@ -41,7 +41,23 @@ jobs:
           -scheme Mnema
           -sdk iphonesimulator
           -destination 'generic/platform=iOS Simulator'
+          -derivedDataPath "$RUNNER_TEMP/MnemaDerivedData"
           CODE_SIGNING_ALLOWED=NO
+      - name: Install in a temporary simulator
+        run: |
+          simulator_id="$(xcrun simctl create \
+            "Mnema CI $GITHUB_RUN_ID" \
+            com.apple.CoreSimulator.SimDeviceType.iPhone-14)"
+          cleanup() {
+            xcrun simctl shutdown "$simulator_id" >/dev/null 2>&1 || true
+            xcrun simctl delete "$simulator_id" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          xcrun simctl boot "$simulator_id"
+          xcrun simctl bootstatus "$simulator_id" --block
+          xcrun simctl install \
+            "$simulator_id" \
+            "$RUNNER_TEMP/MnemaDerivedData/Build/Products/Debug-iphonesimulator/Mnema.app"
 
   testflight:
     if: github.event_name == 'workflow_dispatch' && inputs.upload_testflight

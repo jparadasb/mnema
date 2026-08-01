@@ -1,7 +1,9 @@
 import FileProvider
 import UniformTypeIdentifiers
 
-final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
+final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
+    NSFileProviderEnumerating
+{
     private let client = APIClient()
 
     required init(domain: NSFileProviderDomain) { super.init() }

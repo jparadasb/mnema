@@ -16,6 +16,9 @@ targets:
       path: MnemaApp/Info.plist
     entitlements:
       path: MnemaApp/Mnema.entitlements
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.jparadasb.mnema
     dependencies:
       - target: MnemaFileProvider
   MnemaFileProvider:
