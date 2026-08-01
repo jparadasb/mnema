@@ -40,6 +40,7 @@ done
 
 [[ "$(uname -s)" == "Darwin" ]] || fail "this installer supports macOS only"
 [[ "${prefix}" == /* ]] || fail "--prefix must be an absolute path"
+[[ "${prefix}" != *[$'\n\r"\\']* ]] || fail "--prefix contains unsupported characters"
 for command in curl shasum unzip; do
   command -v "${command}" >/dev/null || fail "required command not found: ${command}"
 done
@@ -48,9 +49,16 @@ install_root="${prefix}/share/xcodegen/${XCODEGEN_VERSION}"
 binary="${install_root}/xcodegen/bin/xcodegen"
 link="${prefix}/bin/xcodegen"
 
+write_launcher() {
+  local temporary_launcher="${link}.tmp.$$"
+  printf '#!/bin/sh\nexec "%s" "$@"\n' "${binary}" >"${temporary_launcher}"
+  chmod 0755 "${temporary_launcher}"
+  mv -f "${temporary_launcher}" "${link}"
+}
+
 if [[ -x "${binary}" ]] && "${binary}" --version | grep -Fq "${XCODEGEN_VERSION}"; then
   mkdir -p "${prefix}/bin"
-  ln -sfn "${binary}" "${link}"
+  write_launcher
   printf 'XcodeGen %s already installed: %s\n' "${XCODEGEN_VERSION}" "${link}"
   exit 0
 fi
@@ -69,7 +77,7 @@ mkdir -p "${unpacked}" "${install_root}/xcodegen" "${prefix}/bin"
 unzip -q "${archive}" -d "${unpacked}"
 [[ -x "${unpacked}/xcodegen/bin/xcodegen" ]] || fail "XcodeGen archive layout is invalid"
 cp -R "${unpacked}/xcodegen/." "${install_root}/xcodegen/"
-ln -sfn "${binary}" "${link}"
+write_launcher
 "${link}" --version | grep -Fq "${XCODEGEN_VERSION}" || fail "installed XcodeGen failed validation"
 
 printf 'Installed XcodeGen %s: %s\n' "${XCODEGEN_VERSION}" "${link}"
