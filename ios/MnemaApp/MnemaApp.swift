@@ -35,15 +35,28 @@ struct PairingView: View {
         }
         do {
             try await APIClient().pair(server: url, code: code, deviceName: UIDevice.current.name)
-            let domain = NSFileProviderDomain(
-                identifier: NSFileProviderDomainIdentifier("mnema-owner"),
-                displayName: "Mnema"
-            )
-            try await NSFileProviderManager.add(domain)
+            try await ensureFileProviderDomain()
             status = "Connected. Enable Mnema in Files."
             code = ""
         } catch {
-            status = "Connection failed: \(error.localizedDescription)"
+            let failure = error as NSError
+            status = "Connection failed: \(failure.localizedDescription) [\(failure.domain) \(failure.code)]"
         }
+    }
+
+    private func ensureFileProviderDomain() async throws {
+        let identifier = NSFileProviderDomainIdentifier("mnema-owner")
+        let domains: [NSFileProviderDomain] = try await withCheckedThrowingContinuation { continuation in
+            NSFileProviderManager.getDomainsWithCompletionHandler { domains, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(returning: domains)
+                }
+            }
+        }
+        guard !domains.contains(where: { $0.identifier == identifier }) else { return }
+        let domain = NSFileProviderDomain(identifier: identifier, displayName: "Mnema")
+        try await NSFileProviderManager.add(domain)
     }
 }
