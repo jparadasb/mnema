@@ -2,10 +2,18 @@ name: iOS
 
 on:
   pull_request:
-    paths: ["ios/**", ".github/workflows/ios.yml"]
+    paths:
+      - "ios/**"
+      - "scripts/install-xcodegen-macos.sh"
+      - ".github/actions/setup-xcodegen/**"
+      - ".github/workflows/ios.yml"
   push:
     branches: [main]
-    paths: ["ios/**", ".github/workflows/ios.yml"]
+    paths:
+      - "ios/**"
+      - "scripts/install-xcodegen-macos.sh"
+      - ".github/actions/setup-xcodegen/**"
+      - ".github/workflows/ios.yml"
   workflow_dispatch:
     inputs:
       upload_testflight:
