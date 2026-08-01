@@ -21,7 +21,10 @@ jobs:
     runs-on: [self-hosted, macOS, X64]
     steps:
       - uses: actions/checkout@v4
-      - run: command -v xcodegen >/dev/null || brew install xcodegen
+      - uses: ./.github/actions/setup-xcodegen
+      - run: |
+          sw_vers
+          xcodebuild -version
       - working-directory: ios
         run: xcodegen generate
       - working-directory: ios
@@ -40,7 +43,7 @@ jobs:
     environment: testflight
     steps:
       - uses: actions/checkout@v4
-      - run: command -v xcodegen >/dev/null || brew install xcodegen
+      - uses: ./.github/actions/setup-xcodegen
       - working-directory: ios
         run: xcodegen generate
       - name: Install App Store Connect API key

@@ -1,0 +1,21 @@
+name: Set up XcodeGen
+description: Install a pinned XcodeGen release without mutating Homebrew
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        XCODEGEN_VERSION: 2.38.0
+        XCODEGEN_SHA256: aed5bedc80979058287d46b292d3118f89a4cec8e7f1f2ff849e190948c9cd7e
+      run: |
+        if command -v xcodegen >/dev/null; then
+          exit 0
+        fi
+        archive="$RUNNER_TEMP/xcodegen-$XCODEGEN_VERSION.zip"
+        install_root="$RUNNER_TEMP/xcodegen-$XCODEGEN_VERSION"
+        curl --fail --location --silent --show-error \
+          --output "$archive" \
+          "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
+        printf '%s  %s\n' "$XCODEGEN_SHA256" "$archive" | shasum --algorithm 256 --check
+        unzip -q "$archive" -d "$install_root"
+        printf '%s\n' "$install_root/xcodegen/bin" >> "$GITHUB_PATH"
