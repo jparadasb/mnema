@@ -23,6 +23,7 @@ targets:
       path: MnemaApp/Mnema.entitlements
     settings:
       base:
+        CODE_SIGN_ENTITLEMENTS: MnemaApp/Mnema.entitlements
         PRODUCT_BUNDLE_IDENTIFIER: com.jparadasb.mnema
     dependencies:
       - target: MnemaFileProvider
@@ -43,6 +44,7 @@ targets:
       path: MnemaFileProvider/MnemaFileProvider.entitlements
     settings:
       base:
+        CODE_SIGN_ENTITLEMENTS: MnemaFileProvider/MnemaFileProvider.entitlements
         PRODUCT_BUNDLE_IDENTIFIER: com.jparadasb.mnema.fileprovider
         SKIP_INSTALL: YES
   MnemaTests:

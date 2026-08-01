@@ -34,6 +34,19 @@ jobs:
           "$xcode_app/Contents/Developer/usr/bin/xcodebuild" -version
       - working-directory: ios
         run: xcodegen generate
+      - name: Verify entitlement build settings
+        working-directory: ios
+        run: |
+          xcodebuild -project Mnema.xcodeproj -target Mnema -showBuildSettings \
+            | grep -F 'CODE_SIGN_ENTITLEMENTS = MnemaApp/Mnema.entitlements'
+          xcodebuild -project Mnema.xcodeproj -target MnemaFileProvider -showBuildSettings \
+            | grep -F 'CODE_SIGN_ENTITLEMENTS = MnemaFileProvider/MnemaFileProvider.entitlements'
+          plutil -extract com.apple.security.application-groups xml1 -o - \
+            MnemaApp/Mnema.entitlements \
+            | grep -F 'group.com.jparadasb.mnema'
+          plutil -extract com.apple.security.application-groups xml1 -o - \
+            MnemaFileProvider/MnemaFileProvider.entitlements \
+            | grep -F 'group.com.jparadasb.mnema'
       - working-directory: ios
         run: >-
           xcodebuild build
