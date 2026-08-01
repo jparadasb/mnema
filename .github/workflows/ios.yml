@@ -54,7 +54,7 @@ jobs:
           }
           trap cleanup EXIT
           xcrun simctl boot "$simulator_id"
-          xcrun simctl bootstatus "$simulator_id" --block
+          xcrun simctl bootstatus "$simulator_id" -b
           xcrun simctl install \
             "$simulator_id" \
             "$RUNNER_TEMP/MnemaDerivedData/Build/Products/Debug-iphonesimulator/Mnema.app"
