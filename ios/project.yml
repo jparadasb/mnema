@@ -21,6 +21,9 @@ targets:
         UILaunchScreen: {}
     entitlements:
       path: MnemaApp/Mnema.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.jparadasb.mnema
     settings:
       base:
         CODE_SIGN_ENTITLEMENTS: MnemaApp/Mnema.entitlements
@@ -42,6 +45,9 @@ targets:
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).FileProviderExtension
     entitlements:
       path: MnemaFileProvider/MnemaFileProvider.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.jparadasb.mnema
     settings:
       base:
         CODE_SIGN_ENTITLEMENTS: MnemaFileProvider/MnemaFileProvider.entitlements
