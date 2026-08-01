@@ -1,17 +1,17 @@
 import FileProvider
 import UniformTypeIdentifiers
 
-final class FileProviderExtension: NSFileProviderReplicatedExtension {
+final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
     private let client = APIClient()
 
-    required init(domain: NSFileProviderDomain) { super.init(domain: domain) }
-    override func invalidate() {}
+    required init(domain: NSFileProviderDomain) { super.init() }
+    func invalidate() {}
 
     private func remoteIdentifier(_ identifier: NSFileProviderItemIdentifier) -> String {
         identifier == .rootContainer ? "root" : identifier.rawValue
     }
 
-    override func item(
+    func item(
         for identifier: NSFileProviderItemIdentifier,
         request: NSFileProviderRequest,
         completionHandler: @escaping (NSFileProviderItem?, Error?) -> Void
@@ -27,7 +27,7 @@ final class FileProviderExtension: NSFileProviderReplicatedExtension {
         return progress
     }
 
-    override func fetchContents(
+    func fetchContents(
         for itemIdentifier: NSFileProviderItemIdentifier,
         version requestedVersion: NSFileProviderItemVersion?,
         request: NSFileProviderRequest,
@@ -47,7 +47,7 @@ final class FileProviderExtension: NSFileProviderReplicatedExtension {
         return progress
     }
 
-    override func modifyItem(
+    func modifyItem(
         _ item: NSFileProviderItem,
         baseVersion version: NSFileProviderItemVersion,
         changedFields: NSFileProviderItemFields,
@@ -61,7 +61,7 @@ final class FileProviderExtension: NSFileProviderReplicatedExtension {
         return progress
     }
 
-    override func deleteItem(
+    func deleteItem(
         identifier: NSFileProviderItemIdentifier,
         baseVersion version: NSFileProviderItemVersion,
         options: NSFileProviderDeleteItemOptions = [],
@@ -73,7 +73,7 @@ final class FileProviderExtension: NSFileProviderReplicatedExtension {
         return progress
     }
 
-    override func createItem(
+    func createItem(
         basedOn itemTemplate: NSFileProviderItem,
         fields: NSFileProviderItemFields,
         contents url: URL?,
@@ -101,7 +101,7 @@ final class FileProviderExtension: NSFileProviderReplicatedExtension {
         return progress
     }
 
-    override func enumerator(
+    func enumerator(
         for containerItemIdentifier: NSFileProviderItemIdentifier,
         request: NSFileProviderRequest
     ) throws -> NSFileProviderEnumerator {
