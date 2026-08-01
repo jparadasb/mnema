@@ -3,6 +3,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from click import unstyle
 from typer.testing import CliRunner
 
 from mnema.admin import cli as admin_cli
@@ -14,11 +15,20 @@ from mnema.cli import app
 def test_unified_cli_exposes_appliance_command_tree() -> None:
     runner = CliRunner()
 
-    result = runner.invoke(app, ["--help"])
-    configure = runner.invoke(app, ["configure", "--help"])
-    cold_storage = runner.invoke(app, ["configure", "cold-storage", "--help"])
-    config = runner.invoke(app, ["config", "--help"])
-    icloud = runner.invoke(app, ["icloud", "--help"])
+    help_width = 160
+    result = runner.invoke(app, ["--help"], terminal_width=help_width)
+    configure = runner.invoke(app, ["configure", "--help"], terminal_width=help_width)
+    cold_storage = runner.invoke(
+        app, ["configure", "cold-storage", "--help"], terminal_width=help_width
+    )
+    config = runner.invoke(app, ["config", "--help"], terminal_width=help_width)
+    icloud = runner.invoke(app, ["icloud", "--help"], terminal_width=help_width)
+
+    result_output = unstyle(result.stdout)
+    configure_output = unstyle(configure.stdout)
+    cold_storage_output = unstyle(cold_storage.stdout)
+    config_output = unstyle(config.stdout)
+    icloud_output = unstyle(icloud.stdout)
 
     assert result.exit_code == 0
     for command in (
@@ -31,19 +41,19 @@ def test_unified_cli_exposes_appliance_command_tree() -> None:
         "restore",
         "uninstall",
     ):
-        assert command in result.stdout
+        assert command in result_output
     assert configure.exit_code == 0
-    assert "cold-storage" in configure.stdout
-    assert "cloudflare" in configure.stdout
-    assert "icloud" in configure.stdout
+    assert "cold-storage" in configure_output
+    assert "cloudflare" in configure_output
+    assert "icloud" in configure_output
     assert cold_storage.exit_code == 0
-    assert "--provider" in cold_storage.stdout
-    assert "--region" in cold_storage.stdout
+    assert "--provider" in cold_storage_output
+    assert "--region" in cold_storage_output
     assert config.exit_code == 0
-    assert "validate" in config.stdout
+    assert "validate" in config_output
     assert icloud.exit_code == 0
     for command in ("auth", "preview", "sync", "status"):
-        assert command in icloud.stdout
+        assert command in icloud_output
 
 
 def test_urls_supports_human_and_json_output(monkeypatch: pytest.MonkeyPatch) -> None:
