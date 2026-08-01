@@ -51,6 +51,7 @@ jobs:
             | grep -F 'CODE_SIGN_ENTITLEMENTS = MnemaFileProvider/MnemaFileProvider.entitlements'
           grep -F 'group.com.jparadasb.mnema' MnemaApp/Mnema.entitlements
           grep -F 'group.com.jparadasb.mnema' MnemaFileProvider/MnemaFileProvider.entitlements
+          test "$(/usr/libexec/PlistBuddy -c 'Print :NSExtension:NSExtensionFileProviderDocumentGroup' MnemaFileProvider/Info.plist)" = 'group.com.jparadasb.mnema'
       - working-directory: ios
         run: >-
           xcodebuild build

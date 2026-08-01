@@ -12,6 +12,7 @@
   <key>CFBundleVersion</key><string>1</string>
   <key>KeychainAccessGroup</key><string>group.com.jparadasb.mnema</string>
   <key>NSExtension</key><dict>
+    <key>NSExtensionFileProviderDocumentGroup</key><string>group.com.jparadasb.mnema</string>
     <key>NSExtensionPointIdentifier</key><string>com.apple.fileprovider-nonui</string>
     <key>NSExtensionPrincipalClass</key><string>$(PRODUCT_MODULE_NAME).FileProviderExtension</string>
     <key>NSExtensionFileProviderSupportsEnumeration</key><true/>
