@@ -22,9 +22,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-xcodegen
-      - run: |
+      - name: Select full Xcode installation
+        run: |
+          xcode_app="$(find /Applications -maxdepth 1 -type d -name 'Xcode*.app' -print | sort | tail -n 1)"
+          if [[ -z "$xcode_app" ]]; then
+            echo '::error::A full Xcode installation is required on the macOS runner.'
+            exit 1
+          fi
+          printf 'DEVELOPER_DIR=%s/Contents/Developer\n' "$xcode_app" >> "$GITHUB_ENV"
           sw_vers
-          xcodebuild -version
+          "$xcode_app/Contents/Developer/usr/bin/xcodebuild" -version
       - working-directory: ios
         run: xcodegen generate
       - working-directory: ios
@@ -44,6 +51,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-xcodegen
+      - name: Select full Xcode installation
+        run: |
+          xcode_app="$(find /Applications -maxdepth 1 -type d -name 'Xcode*.app' -print | sort | tail -n 1)"
+          if [[ -z "$xcode_app" ]]; then
+            echo '::error::A full Xcode installation is required on the macOS runner.'
+            exit 1
+          fi
+          printf 'DEVELOPER_DIR=%s/Contents/Developer\n' "$xcode_app" >> "$GITHUB_ENV"
       - working-directory: ios
         run: xcodegen generate
       - name: Install App Store Connect API key
