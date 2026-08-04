@@ -4,6 +4,11 @@ on:
   pull_request:
     paths:
       - "ios/**"
+      - "src/mnema/file_provider/**"
+      - "tests/e2e/test_ios_file_provider.py"
+      - "package.json"
+      - "package-lock.json"
+      - "pyproject.toml"
       - "scripts/install-xcodegen-macos.sh"
       - ".github/actions/setup-xcodegen/**"
       - ".github/workflows/ios.yml"
@@ -11,6 +16,11 @@ on:
     branches: [main]
     paths:
       - "ios/**"
+      - "src/mnema/file_provider/**"
+      - "tests/e2e/test_ios_file_provider.py"
+      - "package.json"
+      - "package-lock.json"
+      - "pyproject.toml"
       - "scripts/install-xcodegen-macos.sh"
       - ".github/actions/setup-xcodegen/**"
       - ".github/workflows/ios.yml"
@@ -26,10 +36,18 @@ permissions:
 
 jobs:
   build:
+    timeout-minutes: 30
     runs-on: [self-hosted, macOS, X64]
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-xcodegen
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
       - name: Select full Xcode installation
         run: |
           xcode_app="$(find /Applications -maxdepth 1 -type d -name 'Xcode*.app' -print | sort | tail -n 1)"
@@ -61,6 +79,28 @@ jobs:
           -destination 'generic/platform=iOS Simulator'
           -derivedDataPath "$RUNNER_TEMP/MnemaDerivedData"
           CODE_SIGNING_ALLOWED=NO
+      - working-directory: ios
+        run: >-
+          xcodebuild build
+          -project Mnema.xcodeproj
+          -scheme Mnema
+          -sdk iphonesimulator
+          -destination 'generic/platform=iOS Simulator'
+          -derivedDataPath "$RUNNER_TEMP/MnemaE2EDerivedData"
+      - working-directory: ios
+        run: >-
+          xcodebuild build
+          -project Mnema.xcodeproj
+          -scheme MnemaE2EFixture
+          -sdk iphonesimulator
+          -destination 'generic/platform=iOS Simulator'
+          -derivedDataPath "$RUNNER_TEMP/MnemaE2EDerivedData"
+      - name: Verify shared Keychain entitlement declarations
+        run: |
+          /usr/libexec/PlistBuddy -c 'Print :keychain-access-groups:0' \
+            ios/MnemaApp/Mnema.entitlements | grep -F 'group.com.jparadasb.mnema'
+          /usr/libexec/PlistBuddy -c 'Print :keychain-access-groups:0' \
+            ios/MnemaFileProvider/MnemaFileProvider.entitlements | grep -F 'group.com.jparadasb.mnema'
       - name: Install in a temporary simulator
         run: |
           simulator_id="$(xcrun simctl create \
@@ -85,6 +125,30 @@ jobs:
               | tail -n 200
             exit 1
           fi
+      - name: Install pinned WebDriverAgent test tooling
+        env:
+          APPIUM_HOME: ${{ runner.temp }}/appium-home
+        run: |
+          npm ci
+          python -m pip install -e '.[dev]'
+          npx appium driver install --source=local node_modules/appium-xcuitest-driver
+      - name: Run Mnema File Provider simulator E2E
+        env:
+          APPIUM_HOME: ${{ runner.temp }}/appium-home
+          MNEMA_E2E_IOS_APP: ${{ runner.temp }}/MnemaE2EDerivedData/Build/Products/Debug-iphonesimulator/Mnema.app
+          MNEMA_E2E_IOS_FIXTURE_APP: ${{ runner.temp }}/MnemaE2EDerivedData/Build/Products/Debug-iphonesimulator/MnemaE2EFixture.app
+          MNEMA_IOS_E2E_REQUIRED: "1"
+        run: >-
+          pytest tests/e2e/test_ios_file_provider.py
+          --basetemp="$RUNNER_TEMP/mnema-ios-e2e"
+          --no-cov
+      - name: Upload simulator E2E diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mnema-ios-e2e-diagnostics
+          path: ${{ runner.temp }}/mnema-ios-e2e
+          if-no-files-found: ignore
 
   testflight:
     if: github.event_name == 'workflow_dispatch' && inputs.upload_testflight

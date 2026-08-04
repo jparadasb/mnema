@@ -17,11 +17,16 @@ struct PairingView: View {
                 TextField("https://files.example.com", text: $server)
                     .textInputAutocapitalization(.never)
                     .keyboardType(.URL)
+                    .accessibilityIdentifier("mnema.server-url")
                 SecureField("Pairing code", text: $code)
+                    .accessibilityIdentifier("mnema.pairing-code")
                 Button("Connect Mnema") {
                     Task { await connect() }
                 }
-                Text(status).foregroundStyle(.secondary)
+                .accessibilityIdentifier("mnema.connect")
+                Text(status)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("mnema.connection-status")
             }
             .navigationTitle("Mnema Files")
         }

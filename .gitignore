@@ -14,4 +14,4 @@ data/
 secrets/
 dist/
 build/
-
+node_modules/
