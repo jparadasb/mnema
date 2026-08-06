@@ -22,6 +22,7 @@
 		A21D161410AC5CCFFE68E753 /* TokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B8FB5CD5E616D588BDE880 /* TokenStore.swift */; };
 		A9889E3F6116585FC0CA2E25 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F682ECF89E3441365046DAFA /* APIClient.swift */; };
 		AAE56DA6CBC05EED92370910 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 305C697FDCC95449FBE5B666 /* Models.swift */; };
+		B8930191236965C87703B7C8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 63D015BBA08FA2D671545035 /* Assets.xcassets */; };
 		F2308484CAF5708B8D581DBB /* FileProviderExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84A1B2A015819865EE62485B /* FileProviderExtension.swift */; };
 /* End PBXBuildFile section */
 
@@ -69,6 +70,7 @@
 		5C773CA01CE632E10F1BBD32 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		612CD8C340DB09C7EDCA851C /* MnemaE2EFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MnemaE2EFixture.swift; sourceTree = "<group>"; };
 		62B9BCEE6AC3D0BD68124BC2 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		63D015BBA08FA2D671545035 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		84A1B2A015819865EE62485B /* FileProviderExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileProviderExtension.swift; sourceTree = "<group>"; };
 		9122CF4190480146A645C880 /* FileProviderItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileProviderItem.swift; sourceTree = "<group>"; };
 		A1B8FB5CD5E616D588BDE880 /* TokenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenStore.swift; sourceTree = "<group>"; };
@@ -145,6 +147,7 @@
 		908815B390F0A1534E049E08 /* MnemaFileProvider */ = {
 			isa = PBXGroup;
 			children = (
+				63D015BBA08FA2D671545035 /* Assets.xcassets */,
 				E00ACC69A4A1B8C68CEE0991 /* FileProviderEnumerator.swift */,
 				84A1B2A015819865EE62485B /* FileProviderExtension.swift */,
 				9122CF4190480146A645C880 /* FileProviderItem.swift */,
@@ -162,6 +165,7 @@
 			buildConfigurationList = 9011ABDFE29C6254C1E56209 /* Build configuration list for PBXNativeTarget "MnemaFileProvider" */;
 			buildPhases = (
 				B655352529E1135DE6AC91EA /* Sources */,
+				2AE0E97F5AADBD8A48DC37DE /* Resources */,
 			);
 			buildRules = (
 			);
@@ -265,6 +269,14 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		2AE0E97F5AADBD8A48DC37DE /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B8930191236965C87703B7C8 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		F0A97EDA0D6BDFEB8C39F961 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;

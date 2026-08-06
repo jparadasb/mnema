@@ -40,7 +40,7 @@ targets:
   MnemaFileProvider:
     type: app-extension
     platform: iOS
-    sources: [MnemaFileProvider, Shared]
+    sources: [MnemaFileProvider, MnemaFileProvider/Assets.xcassets, Shared]
     info:
       path: MnemaFileProvider/Info.plist
       properties:

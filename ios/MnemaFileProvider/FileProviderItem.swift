@@ -1,7 +1,10 @@
 import FileProvider
 import UniformTypeIdentifiers
 
-final class FileProviderItem: NSObject, NSFileProviderItem {
+final class FileProviderItem: NSObject, NSFileProviderItem, NSFileProviderItemDecorating {
+    private static let mnemaDecoration = NSFileProviderItemDecorationIdentifier(
+        "com.jparadasb.mnema.fileprovider.badge"
+    )
     let remote: RemoteItem
     init(_ remote: RemoteItem) { self.remote = remote }
 
@@ -31,5 +34,9 @@ final class FileProviderItem: NSObject, NSFileProviderItem {
         if remote.capabilities.contains("addFile") { result.insert(.allowsAddingSubItems) }
         if remote.capabilities.contains("delete") { result.insert(.allowsDeleting) }
         return result
+    }
+
+    var decorations: [NSFileProviderItemDecorationIdentifier]? {
+        [Self.mnemaDecoration]
     }
 }
