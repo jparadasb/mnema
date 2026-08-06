@@ -365,6 +365,14 @@ def file_provider_api(
     uvicorn.run(create_file_provider_app(settings), host=host, port=port)
 
 
+@app.command("telegram-bot", hidden=True)
+def telegram_bot() -> None:
+    """Run the configured Telegram administration bot."""
+    from mnema.telegram_bot import run_bot
+
+    asyncio.run(run_bot())
+
+
 @app.command("file-provider-pair-internal", hidden=True)
 def file_provider_pair_internal() -> None:
     settings = Settings()
@@ -566,6 +574,7 @@ def icloud_sync_internal() -> None:
                         _set_session_value(
                             session, "icloud_cleanup_last_error", type(error).__name__
                         )
+                project_verified_archives(session)
             _set_runtime_value(database, "icloud_last_result", "succeeded")
             _set_runtime_value(database, "icloud_last_success", datetime.now(UTC).isoformat())
             _set_runtime_value(database, "icloud_last_error", "")

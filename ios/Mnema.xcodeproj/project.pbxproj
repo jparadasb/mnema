@@ -1,0 +1,641 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 54;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0E33CB43239F1166C8EFBBF7 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 305C697FDCC95449FBE5B666 /* Models.swift */; };
+		1CE9227C26A73176BB75D585 /* SharedSyncState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4ADEDD2971CA4203223E4D91 /* SharedSyncState.swift */; };
+		2BA4914D596E5DEFC8B36DD4 /* ModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3F622CC4C0A5C43E6FF845B /* ModelsTests.swift */; };
+		30988A4BFECE61C63401FE0C /* MnemaE2EFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 612CD8C340DB09C7EDCA851C /* MnemaE2EFixture.swift */; };
+		3D2DCF869A60BA98B999489C /* FileProviderEnumerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E00ACC69A4A1B8C68CEE0991 /* FileProviderEnumerator.swift */; };
+		3F1161FC5EA2A596ED424B42 /* MnemaFileProvider.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 17DFD430CCEAA6F70A0FC1CA /* MnemaFileProvider.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		446D1D7250466C0434710AF1 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F682ECF89E3441365046DAFA /* APIClient.swift */; };
+		47BDFA55E19C570CA7DE9E4B /* MnemaApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06D6CAA76667E1D352F21999 /* MnemaApp.swift */; };
+		544C11530F2DB9094CAEA7BC /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5C773CA01CE632E10F1BBD32 /* Assets.xcassets */; };
+		8D040BE1773AC1A869EDADA4 /* TokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B8FB5CD5E616D588BDE880 /* TokenStore.swift */; };
+		9E0BD432B7A994CD5559CF7C /* FileProviderItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9122CF4190480146A645C880 /* FileProviderItem.swift */; };
+		A01781A643AE2881490402CA /* SharedSyncState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4ADEDD2971CA4203223E4D91 /* SharedSyncState.swift */; };
+		A21D161410AC5CCFFE68E753 /* TokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B8FB5CD5E616D588BDE880 /* TokenStore.swift */; };
+		A9889E3F6116585FC0CA2E25 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F682ECF89E3441365046DAFA /* APIClient.swift */; };
+		AAE56DA6CBC05EED92370910 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 305C697FDCC95449FBE5B666 /* Models.swift */; };
+		F2308484CAF5708B8D581DBB /* FileProviderExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84A1B2A015819865EE62485B /* FileProviderExtension.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		647006C714B96304991E5EF6 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 8C6A2CAE7EFC1C1A1EB4CDA5 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 8172ABE0AD68FF36BD25CB4B;
+			remoteInfo = MnemaFileProvider;
+		};
+		CB21BF48EABA8AC93598C359 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 8C6A2CAE7EFC1C1A1EB4CDA5 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 9F78714BB2FEA67BA890C503;
+			remoteInfo = Mnema;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		FC153B136219DEEA478D9393 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				3F1161FC5EA2A596ED424B42 /* MnemaFileProvider.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		06D6CAA76667E1D352F21999 /* MnemaApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MnemaApp.swift; sourceTree = "<group>"; };
+		17DFD430CCEAA6F70A0FC1CA /* MnemaFileProvider.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = MnemaFileProvider.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		305C697FDCC95449FBE5B666 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		3B617F0E15F04238BCC802A2 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		3C0044CE99FA161B4634215F /* MnemaFileProvider.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MnemaFileProvider.entitlements; sourceTree = "<group>"; };
+		3FD26656F3887AAE600DBA47 /* MnemaTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MnemaTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		46F5852E1933AA86B92A9C4E /* Mnema.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Mnema.entitlements; sourceTree = "<group>"; };
+		4ADEDD2971CA4203223E4D91 /* SharedSyncState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedSyncState.swift; sourceTree = "<group>"; };
+		4FB99549D7B95CC71460EC45 /* Mnema.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Mnema.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		5C773CA01CE632E10F1BBD32 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		612CD8C340DB09C7EDCA851C /* MnemaE2EFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MnemaE2EFixture.swift; sourceTree = "<group>"; };
+		62B9BCEE6AC3D0BD68124BC2 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		84A1B2A015819865EE62485B /* FileProviderExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileProviderExtension.swift; sourceTree = "<group>"; };
+		9122CF4190480146A645C880 /* FileProviderItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileProviderItem.swift; sourceTree = "<group>"; };
+		A1B8FB5CD5E616D588BDE880 /* TokenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenStore.swift; sourceTree = "<group>"; };
+		ABA79136F1F53C0FA3000ECA /* MnemaE2EFixture.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = MnemaE2EFixture.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		D31A8D0566826CFCC902CFDA /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		D3F622CC4C0A5C43E6FF845B /* ModelsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelsTests.swift; sourceTree = "<group>"; };
+		E00ACC69A4A1B8C68CEE0991 /* FileProviderEnumerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileProviderEnumerator.swift; sourceTree = "<group>"; };
+		F682ECF89E3441365046DAFA /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		0EB558D6B909730C5CF7C18F /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				4FB99549D7B95CC71460EC45 /* Mnema.app */,
+				ABA79136F1F53C0FA3000ECA /* MnemaE2EFixture.app */,
+				17DFD430CCEAA6F70A0FC1CA /* MnemaFileProvider.appex */,
+				3FD26656F3887AAE600DBA47 /* MnemaTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		196280195B5EA77EC471B292 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				F682ECF89E3441365046DAFA /* APIClient.swift */,
+				305C697FDCC95449FBE5B666 /* Models.swift */,
+				4ADEDD2971CA4203223E4D91 /* SharedSyncState.swift */,
+				A1B8FB5CD5E616D588BDE880 /* TokenStore.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		3A3F7A8DD5ABB17FD5E6F42F /* MnemaApp */ = {
+			isa = PBXGroup;
+			children = (
+				5C773CA01CE632E10F1BBD32 /* Assets.xcassets */,
+				D31A8D0566826CFCC902CFDA /* Info.plist */,
+				46F5852E1933AA86B92A9C4E /* Mnema.entitlements */,
+				06D6CAA76667E1D352F21999 /* MnemaApp.swift */,
+			);
+			path = MnemaApp;
+			sourceTree = "<group>";
+		};
+		57765FA65FC4F8D93AD8084D /* MnemaTests */ = {
+			isa = PBXGroup;
+			children = (
+				D3F622CC4C0A5C43E6FF845B /* ModelsTests.swift */,
+			);
+			path = MnemaTests;
+			sourceTree = "<group>";
+		};
+		6977979C4322103DCDF9DF32 /* MnemaE2EFixture */ = {
+			isa = PBXGroup;
+			children = (
+				62B9BCEE6AC3D0BD68124BC2 /* Info.plist */,
+				612CD8C340DB09C7EDCA851C /* MnemaE2EFixture.swift */,
+			);
+			path = MnemaE2EFixture;
+			sourceTree = "<group>";
+		};
+		6F4E16779B575EC96C429C1D = {
+			isa = PBXGroup;
+			children = (
+				3A3F7A8DD5ABB17FD5E6F42F /* MnemaApp */,
+				6977979C4322103DCDF9DF32 /* MnemaE2EFixture */,
+				908815B390F0A1534E049E08 /* MnemaFileProvider */,
+				57765FA65FC4F8D93AD8084D /* MnemaTests */,
+				196280195B5EA77EC471B292 /* Shared */,
+				0EB558D6B909730C5CF7C18F /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		908815B390F0A1534E049E08 /* MnemaFileProvider */ = {
+			isa = PBXGroup;
+			children = (
+				E00ACC69A4A1B8C68CEE0991 /* FileProviderEnumerator.swift */,
+				84A1B2A015819865EE62485B /* FileProviderExtension.swift */,
+				9122CF4190480146A645C880 /* FileProviderItem.swift */,
+				3B617F0E15F04238BCC802A2 /* Info.plist */,
+				3C0044CE99FA161B4634215F /* MnemaFileProvider.entitlements */,
+			);
+			path = MnemaFileProvider;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		8172ABE0AD68FF36BD25CB4B /* MnemaFileProvider */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 9011ABDFE29C6254C1E56209 /* Build configuration list for PBXNativeTarget "MnemaFileProvider" */;
+			buildPhases = (
+				B655352529E1135DE6AC91EA /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = MnemaFileProvider;
+			productName = MnemaFileProvider;
+			productReference = 17DFD430CCEAA6F70A0FC1CA /* MnemaFileProvider.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		9F78714BB2FEA67BA890C503 /* Mnema */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 722ED9CD514660012F71B154 /* Build configuration list for PBXNativeTarget "Mnema" */;
+			buildPhases = (
+				F2C14209113201D3771F7F87 /* Sources */,
+				F0A97EDA0D6BDFEB8C39F961 /* Resources */,
+				FC153B136219DEEA478D9393 /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				BB663676D83A1C9CF48ABDD9 /* PBXTargetDependency */,
+			);
+			name = Mnema;
+			productName = Mnema;
+			productReference = 4FB99549D7B95CC71460EC45 /* Mnema.app */;
+			productType = "com.apple.product-type.application";
+		};
+		A4DA70B78F0B0942C5984FE8 /* MnemaTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 86F2BD936BCC6B324EB2EAEC /* Build configuration list for PBXNativeTarget "MnemaTests" */;
+			buildPhases = (
+				60569760C818A673E8862B74 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				2F2BA3F74E4F4D83EEA83D53 /* PBXTargetDependency */,
+			);
+			name = MnemaTests;
+			productName = MnemaTests;
+			productReference = 3FD26656F3887AAE600DBA47 /* MnemaTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		E81CC5B09A50EB2005FF6ACC /* MnemaE2EFixture */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 91C02A2E6A9ED4A2C4C8BC97 /* Build configuration list for PBXNativeTarget "MnemaE2EFixture" */;
+			buildPhases = (
+				D004B9B87FFC65B2B3F8AA5F /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = MnemaE2EFixture;
+			productName = MnemaE2EFixture;
+			productReference = ABA79136F1F53C0FA3000ECA /* MnemaE2EFixture.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		8C6A2CAE7EFC1C1A1EB4CDA5 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					8172ABE0AD68FF36BD25CB4B = {
+						DevelopmentTeam = "";
+					};
+					9F78714BB2FEA67BA890C503 = {
+						DevelopmentTeam = "";
+					};
+					A4DA70B78F0B0942C5984FE8 = {
+						DevelopmentTeam = "";
+					};
+					E81CC5B09A50EB2005FF6ACC = {
+						DevelopmentTeam = "";
+					};
+				};
+			};
+			buildConfigurationList = 019FD2A6D04E306AD0CC27A2 /* Build configuration list for PBXProject "Mnema" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 6F4E16779B575EC96C429C1D;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				9F78714BB2FEA67BA890C503 /* Mnema */,
+				E81CC5B09A50EB2005FF6ACC /* MnemaE2EFixture */,
+				8172ABE0AD68FF36BD25CB4B /* MnemaFileProvider */,
+				A4DA70B78F0B0942C5984FE8 /* MnemaTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		F0A97EDA0D6BDFEB8C39F961 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				544C11530F2DB9094CAEA7BC /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		60569760C818A673E8862B74 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				2BA4914D596E5DEFC8B36DD4 /* ModelsTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B655352529E1135DE6AC91EA /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				446D1D7250466C0434710AF1 /* APIClient.swift in Sources */,
+				3D2DCF869A60BA98B999489C /* FileProviderEnumerator.swift in Sources */,
+				F2308484CAF5708B8D581DBB /* FileProviderExtension.swift in Sources */,
+				9E0BD432B7A994CD5559CF7C /* FileProviderItem.swift in Sources */,
+				AAE56DA6CBC05EED92370910 /* Models.swift in Sources */,
+				1CE9227C26A73176BB75D585 /* SharedSyncState.swift in Sources */,
+				A21D161410AC5CCFFE68E753 /* TokenStore.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D004B9B87FFC65B2B3F8AA5F /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				30988A4BFECE61C63401FE0C /* MnemaE2EFixture.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F2C14209113201D3771F7F87 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A9889E3F6116585FC0CA2E25 /* APIClient.swift in Sources */,
+				47BDFA55E19C570CA7DE9E4B /* MnemaApp.swift in Sources */,
+				0E33CB43239F1166C8EFBBF7 /* Models.swift in Sources */,
+				A01781A643AE2881490402CA /* SharedSyncState.swift in Sources */,
+				8D040BE1773AC1A869EDADA4 /* TokenStore.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		2F2BA3F74E4F4D83EEA83D53 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 9F78714BB2FEA67BA890C503 /* Mnema */;
+			targetProxy = CB21BF48EABA8AC93598C359 /* PBXContainerItemProxy */;
+		};
+		BB663676D83A1C9CF48ABDD9 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 8172ABE0AD68FF36BD25CB4B /* MnemaFileProvider */;
+			targetProxy = 647006C714B96304991E5EF6 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		2A0C3725A383E9099EFA9437 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = "";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.7;
+			};
+			name = Release;
+		};
+		334A5456E18DA017D863F212 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.jparadasb.MnemaTests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Mnema.app/Mnema";
+			};
+			name = Debug;
+		};
+		360307A6F41EEC4F28327DEA /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = MnemaFileProvider/MnemaFileProvider.entitlements;
+				INFOPLIST_FILE = MnemaFileProvider/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.jparadasb.mnema.fileprovider;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		5FCB09572D01FE7BF15B4AE7 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = MnemaApp/Mnema.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = MnemaApp/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.jparadasb.mnema;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		C04F2C57196E27BD930BBE0B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = MnemaApp/Mnema.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = MnemaApp/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.jparadasb.mnema;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		C3D5DF350FB99F4E8022EB80 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = MnemaE2EFixture/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "com.jparadasb.mnema.e2e-fixture";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		D0A03C4561E586F84186BDA0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = MnemaE2EFixture/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "com.jparadasb.mnema.e2e-fixture";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		D5F77C41B9DCEF8328F3180A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.7;
+			};
+			name = Debug;
+		};
+		DF84600ECEE7FD6C9F03ACEA /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.jparadasb.MnemaTests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Mnema.app/Mnema";
+			};
+			name = Release;
+		};
+		FEE0F9480177A9336CD015D9 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = MnemaFileProvider/MnemaFileProvider.entitlements;
+				INFOPLIST_FILE = MnemaFileProvider/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.jparadasb.mnema.fileprovider;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		019FD2A6D04E306AD0CC27A2 /* Build configuration list for PBXProject "Mnema" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D5F77C41B9DCEF8328F3180A /* Debug */,
+				2A0C3725A383E9099EFA9437 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		722ED9CD514660012F71B154 /* Build configuration list for PBXNativeTarget "Mnema" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C04F2C57196E27BD930BBE0B /* Debug */,
+				5FCB09572D01FE7BF15B4AE7 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		86F2BD936BCC6B324EB2EAEC /* Build configuration list for PBXNativeTarget "MnemaTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				334A5456E18DA017D863F212 /* Debug */,
+				DF84600ECEE7FD6C9F03ACEA /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		9011ABDFE29C6254C1E56209 /* Build configuration list for PBXNativeTarget "MnemaFileProvider" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				360307A6F41EEC4F28327DEA /* Debug */,
+				FEE0F9480177A9336CD015D9 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		91C02A2E6A9ED4A2C4C8BC97 /* Build configuration list for PBXNativeTarget "MnemaE2EFixture" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D0A03C4561E586F84186BDA0 /* Debug */,
+				C3D5DF350FB99F4E8022EB80 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 8C6A2CAE7EFC1C1A1EB4CDA5 /* Project object */;
+}

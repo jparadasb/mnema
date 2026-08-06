@@ -7,6 +7,7 @@ from mnema.admin.config import (
     CloudflareConfig,
     ColdStorageConfig,
     ICloudConfig,
+    TelegramConfig,
     atomic_write,
     dump_config,
     load_config,
@@ -124,3 +125,16 @@ def test_icloud_configuration_is_complete_safe_and_redacted() -> None:
 
     assert config.runtime_environment()["MNEMA_ICLOUD_ENABLED"] == "true"
     assert redacted_payload(config)["icloud"]["apple_id"] == "<redacted-apple-id>"
+
+
+def test_telegram_configuration_requires_allowlist_and_renders_profile() -> None:
+    with pytest.raises(ValueError, match="allowed user ID"):
+        TelegramConfig(enabled=True)
+
+    config = ApplianceConfig(
+        telegram=TelegramConfig(enabled=True, allowed_user_ids=(12345, 12345))
+    )
+    environment = config.runtime_environment()
+    assert "telegram" in environment["COMPOSE_PROFILES"]
+    assert environment["MNEMA_TELEGRAM_ALLOWED_USER_IDS"] == "[12345]"
+    assert redacted_payload(config)["telegram"]["bot_token_file"] == "<secret-file>"  # noqa: S105

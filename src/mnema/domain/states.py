@@ -31,6 +31,7 @@ class ArchiveState(StrEnum):
     SOURCE_CHANGED = "SOURCE_CHANGED"
     FAILED_RETRYABLE = "FAILED_RETRYABLE"
     MANUAL_REVIEW = "MANUAL_REVIEW"
+    TEST_CLEANED = "TEST_CLEANED"
 
 
 class InvalidTransition(ValueError):
@@ -70,6 +71,9 @@ ALLOWED_TRANSITIONS.update(
         ArchiveState.SOURCE_CHANGED: frozenset({ArchiveState.QUEUED}),
         ArchiveState.FAILED_RETRYABLE: frozenset({ArchiveState.QUEUED, ArchiveState.MANUAL_REVIEW}),
         ArchiveState.MANUAL_REVIEW: frozenset({ArchiveState.QUEUED}),
+        ArchiveState.LOCAL_STAGED: frozenset(
+            {ArchiveState.LOCAL_VERIFIED, ArchiveState.TEST_CLEANED}
+        ),
         ArchiveState.ARCHIVED: frozenset({ArchiveState.RESTORE_REQUESTED}),
         ArchiveState.RESTORE_REQUESTED: frozenset({ArchiveState.RESTORING}),
         ArchiveState.RESTORING: frozenset({ArchiveState.RESTORED, ArchiveState.FAILED_RETRYABLE}),

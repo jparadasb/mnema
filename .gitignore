@@ -15,3 +15,5 @@ secrets/
 dist/
 build/
 node_modules/
+uv.lock
+**/xcuserdata/

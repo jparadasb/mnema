@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Iterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -21,6 +22,7 @@ from mnema.file_provider.auth import (
 from mnema.file_provider.service import (
     ROOT_ID,
     bootstrap_roots,
+    cleanup_e2e_upload,
     create_upload,
     decode_cursor,
     encode_cursor,
@@ -32,6 +34,7 @@ from mnema.jobs import Database
 from mnema.jobs.models import (
     ArchiveItem,
     FileProviderChange,
+    FileProviderDevice,
     FileProviderItem,
     FileProviderItemKind,
     FileProviderItemStatus,
@@ -61,6 +64,8 @@ def _item_payload(item: FileProviderItem) -> dict[str, Any]:
     capabilities = ["read", "enumerate"] if item.kind == FileProviderItemKind.FOLDER else ["read"]
     if item.id == "inbox":
         capabilities.append("addFile")
+    if os.getenv("MNEMA_ALLOW_TEST_DELETE") == "1" and item.name.startswith("mnema-e2e-"):
+        capabilities.append("delete")
     return {
         "id": item.id,
         "parentId": item.parent_id,
@@ -70,7 +75,7 @@ def _item_payload(item: FileProviderItem) -> dict[str, Any]:
         "contentType": item.content_type,
         "contentVersion": item.content_version,
         "metadataVersion": str(item.metadata_version),
-        "modifiedAt": item.modified_at.isoformat(),
+        "modifiedAt": _aware(item.modified_at).isoformat(),
         "status": item.status.value.lower(),
         "error": item.error_message,
         "capabilities": capabilities,
@@ -140,9 +145,12 @@ def create_file_provider_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
 
     def authorize(authorization: Annotated[str | None, Header()] = None) -> str:
-        with database.session() as session:
-            device = verify_access_token(session, _bearer(authorization), key)
-            return device.id
+        try:
+            with database.session() as session:
+                device = verify_access_token(session, _bearer(authorization), key)
+                return device.id
+        except PermissionError as error:
+            raise HTTPException(401, "access token is invalid") from error
 
     @app.get("/healthz")
     async def health() -> dict[str, str]:
@@ -182,13 +190,21 @@ def create_file_provider_app(settings: Settings | None = None) -> FastAPI:
             "deviceId": tokens.device_id,
         }
 
-    @app.get("/v1/account", dependencies=[Depends(authorize)])
-    async def account() -> dict[str, str]:
+    @app.get("/v1/account")
+    async def account(device_id: str = Depends(authorize)) -> dict[str, str]:
         with database.session() as session:
             generation = session.get(RuntimeSetting, "file_provider_generation")
             if generation is None:
                 raise HTTPException(503, "File Provider generation is unavailable")
-            return {"rootItemId": ROOT_ID, "generation": generation.value}
+            device = session.get(FileProviderDevice, device_id)
+            if device is None:
+                raise HTTPException(401, "device is unavailable")
+            return {
+                "rootItemId": ROOT_ID,
+                "generation": generation.value,
+                "deviceId": device.id,
+                "deviceName": device.name,
+            }
 
     @app.get("/v1/items/{item_id}", dependencies=[Depends(authorize)])
     async def item(item_id: str) -> dict[str, Any]:
@@ -389,5 +405,14 @@ def create_file_provider_app(settings: Settings | None = None) -> FastAPI:
                 return {"itemId": upload.item_id, "status": "processing"}
         except (ValueError, OSError, RuntimeError) as error:
             raise HTTPException(409, str(error)) from error
+
+    @app.delete("/v1/items/{item_id}", dependencies=[Depends(authorize)], status_code=204)
+    async def delete_e2e_item(item_id: str) -> Response:
+        try:
+            with database.session() as session:
+                cleanup_e2e_upload(session, settings, item_id)
+        except PermissionError as error:
+            raise HTTPException(403, str(error)) from error
+        return Response(status_code=204)
 
     return app

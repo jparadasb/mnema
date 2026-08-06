@@ -5,6 +5,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -13,7 +14,8 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Iterator
-from contextlib import contextmanager, suppress
+from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -37,11 +39,18 @@ from mnema.jobs.models import (
 
 DOWNLOAD_CONTENT = b"Mnema simulator download proof"
 UPLOAD_CONTENT = b"Mnema simulator upload proof"
-DOWNLOAD_NAME = "1-e2e-download.txt"
-UPLOAD_NAME = "e2e-upload.txt"
+DOWNLOAD_NAME = "mnema-e2e-download.txt"
+UPLOAD_NAME = "mnema-e2e-upload.txt"
 APP_BUNDLE_ID = "com.jparadasb.mnema"
 FIXTURE_BUNDLE_ID = "com.jparadasb.mnema.e2e-fixture"
 FILES_BUNDLE_ID = "com.apple.DocumentsApp"
+
+
+@dataclass(frozen=True)
+class Simulator:
+    udid: str
+    name: str
+    platform_version: str
 
 
 def run(*arguments: str, timeout: float = 120) -> subprocess.CompletedProcess[str]:
@@ -222,6 +231,16 @@ def running_file_provider(
         session.add(archive)
         session.flush()
         project_verified_archives(session)
+        projected = session.scalar(
+            select(FileProviderItem).where(FileProviderItem.archive_item_id == archive.id)
+        )
+        assert projected is not None
+        projected.parent_id = "inbox"
+        projected.name = DOWNLOAD_NAME
+        for folder_id in ("archive-local", "archive-icloud", "archive-uploads", "archive"):
+            folder = session.get(FileProviderItem, folder_id)
+            assert folder is not None
+            session.delete(folder)
         pairing_code = create_pairing_code(session)
 
     try:
@@ -237,17 +256,48 @@ def running_file_provider(
         thread.join(timeout=10)
 
 
+def available_ios_runtimes() -> list[dict[str, Any]]:
+    payload = json.loads(run("xcrun", "simctl", "list", "runtimes", "--json").stdout)
+    return [
+        runtime
+        for runtime in payload["runtimes"]
+        if runtime.get("isAvailable", False)
+        and runtime.get("identifier", "").startswith("com.apple.CoreSimulator.SimRuntime.iOS-")
+    ]
+
+
+def select_ios_runtime() -> dict[str, Any]:
+    runtimes = available_ios_runtimes()
+    configured = os.getenv("MNEMA_IOS_E2E_RUNTIME")
+    if configured:
+        selected = next(
+            (runtime for runtime in runtimes if runtime["identifier"] == configured), None
+        )
+        if selected is None:
+            pytest.fail(f"configured iOS simulator runtime is unavailable: {configured}")
+        return selected
+    if not runtimes:
+        pytest.fail("no available iOS simulator runtime is installed")
+    return max(
+        runtimes,
+        key=lambda runtime: tuple(int(part) for part in runtime["version"].split(".")),
+    )
+
+
 @contextmanager
-def disposable_simulator(certificate: Path | None = None) -> Iterator[str]:
-    runtime = os.getenv("MNEMA_IOS_E2E_RUNTIME", "com.apple.CoreSimulator.SimRuntime.iOS-16-2")
+def disposable_simulator(certificate: Path | None = None) -> Iterator[Simulator]:
+    runtime = select_ios_runtime()
+    device_type = os.getenv(
+        "MNEMA_IOS_E2E_DEVICE_TYPE", "com.apple.CoreSimulator.SimDeviceType.iPhone-14"
+    )
     name = f"Mnema E2E {os.getpid()}"
     created = run(
         "xcrun",
         "simctl",
         "create",
         name,
-        "com.apple.CoreSimulator.SimDeviceType.iPhone-14",
-        runtime,
+        device_type,
+        runtime["identifier"],
     ).stdout.strip()
     try:
         run("xcrun", "simctl", "boot", created)
@@ -266,7 +316,11 @@ def disposable_simulator(certificate: Path | None = None) -> Iterator[str]:
             "-array",
             "en",
         )
-        yield created
+        yield Simulator(
+            udid=created,
+            name=os.getenv("MNEMA_IOS_E2E_DEVICE_NAME", "iPhone 14"),
+            platform_version=runtime["version"],
+        )
     finally:
         subprocess.run(  # noqa: S603 - exact test-created simulator identifier
             ["xcrun", "simctl", "shutdown", created],  # noqa: S607
@@ -348,15 +402,35 @@ def wait_for_text(driver: Any, identifier: str, expected: str, timeout: float = 
     WebDriverWait(driver, timeout).until(contains_expected)
 
 
+def click_if_present(driver: Any, name: str) -> bool:
+    from appium.webdriver.common.appiumby import AppiumBy
+
+    for element in driver.find_elements(AppiumBy.ACCESSIBILITY_ID, name):
+        if element.is_displayed() and element.is_enabled():
+            element.click()
+            return True
+    return False
+
+
 def open_files_location(driver: Any, *names: str) -> None:
     driver.execute_script("mobile: activateApp", {"bundleId": FILES_BUNDLE_ID})
-    with suppress(Exception):
-        click_named(driver, "Browse", timeout=5)
-    for name in names:
-        click_named(driver, name)
+    click_if_present(driver, "Browse")
+    for index, name in enumerate(names):
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            if click_if_present(driver, name):
+                break
+            if index == 0 and click_if_present(driver, "BackButton"):
+                time.sleep(0.25)
+                continue
+            time.sleep(0.25)
+        else:
+            source = driver.page_source
+            visible_names = sorted(set(re.findall(r'\bname="([^"]+)"', source)))
+            pytest.fail(f"Files location is unavailable: {name}; visible elements: {visible_names}")
 
 
-def wait_for_upload(application: Any, settings: Settings, timeout: float = 45) -> None:
+def wait_for_upload(application: Any, settings: Settings, timeout: float = 45) -> int:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         with application.state.database.session() as session:
@@ -376,9 +450,27 @@ def wait_for_upload(application: Any, settings: Settings, timeout: float = 45) -
                         Job.adapter == "file_provider", Job.payload["upload_id"] == upload.id
                     )
                 )
-                return
+                return archive.id
         time.sleep(0.25)
     pytest.fail("Files did not upload the fixture into Mnema Inbox")
+
+
+def capture_simulator_logs(simulator: Simulator, destination: Path) -> None:
+    result = run(
+        "xcrun",
+        "simctl",
+        "spawn",
+        simulator.udid,
+        "log",
+        "show",
+        "--last",
+        "5m",
+        "--style",
+        "compact",
+        "--predicate",
+        'process == "MnemaFileProvider" OR subsystem == "com.apple.FileProvider"',
+    )
+    destination.write_text(result.stdout, encoding="utf-8")
 
 
 @pytest.mark.e2e
@@ -401,14 +493,14 @@ def test_ios_pairs_browses_downloads_and_uploads(tmp_path: Path) -> None:
         running_appium(tmp_path) as appium_endpoint,
     ):
         base_url, pairing_code, application, settings, requests = backend
-        run("xcrun", "simctl", "install", simulator, str(fixture_path))
+        run("xcrun", "simctl", "install", simulator.udid, str(fixture_path))
         options = XCUITestOptions().load_capabilities(
             {
                 "platformName": "iOS",
                 "appium:automationName": "XCUITest",
-                "appium:udid": simulator,
-                "appium:deviceName": "iPhone 14",
-                "appium:platformVersion": "16.2",
+                "appium:udid": simulator.udid,
+                "appium:deviceName": simulator.name,
+                "appium:platformVersion": simulator.platform_version,
                 "appium:app": str(app_path),
                 "appium:noReset": True,
                 "appium:autoAcceptAlerts": True,
@@ -429,13 +521,17 @@ def test_ios_pairs_browses_downloads_and_uploads(tmp_path: Path) -> None:
             wait_for_text(
                 driver,
                 "mnema.connection-status",
-                "Connected. Enable Mnema in Files.",
+                "Connected. Your archive is available in Files.",
                 timeout=45,
             )
             with application.state.database.session() as session:
                 assert len(session.scalars(select(FileProviderDevice)).all()) == 1
 
-            open_files_location(driver, "Mnema", "Archive", "Local Imports")
+            driver.terminate_app(APP_BUNDLE_ID)
+            driver.activate_app(APP_BUNDLE_ID)
+            driver.find_element(AppiumBy.ACCESSIBILITY_ID, "mnema.connected-toggle")
+
+            open_files_location(driver, "Mnema", "Inbox")
             click_named(driver, DOWNLOAD_NAME, timeout=60)
             deadline = time.monotonic() + 30
             while requests.get("/v1/items/1/content", 0) == 0 and time.monotonic() < deadline:
@@ -456,11 +552,32 @@ def test_ios_pairs_browses_downloads_and_uploads(tmp_path: Path) -> None:
             open_files_location(driver, "Mnema", "Inbox")
             driver.execute_script("mobile: touchAndHold", {"x": 200, "y": 500, "duration": 1.5})
             click_named(driver, "Paste")
-            wait_for_upload(application, settings)
-        except Exception:
+            uploaded_archive_id = wait_for_upload(application, settings)
+            open_files_location(driver, "Mnema", "Inbox")
+            uploaded = driver.find_element(AppiumBy.ACCESSIBILITY_ID, UPLOAD_NAME)
+            driver.execute_script(
+                "mobile: touchAndHold", {"elementId": uploaded.id, "duration": 1.5}
+            )
+            click_named(driver, "Delete")
+            click_if_present(driver, "Delete")
+            deadline = time.monotonic() + 30
+            while time.monotonic() < deadline:
+                with application.state.database.session() as session:
+                    archive = session.get(ArchiveItem, uploaded_archive_id)
+                    if (
+                        archive is not None
+                        and archive.state == ArchiveState.TEST_CLEANED
+                        and archive.audit_events[-1].actor == "e2e-cleanup"
+                    ):
+                        break
+                time.sleep(0.25)
+            else:
+                pytest.fail("Files did not delete the isolated E2E upload")
+        except BaseException:
             screenshot = tmp_path / "ios-e2e-failure.png"
             driver.get_screenshot_as_file(str(screenshot))
             (tmp_path / "ios-e2e-page-source.xml").write_text(driver.page_source, encoding="utf-8")
+            capture_simulator_logs(simulator, tmp_path / "ios-e2e-system.log")
             raise
         finally:
             driver.quit()
@@ -488,9 +605,9 @@ def test_ios_pairs_with_deployed_server(tmp_path: Path) -> None:
             {
                 "platformName": "iOS",
                 "appium:automationName": "XCUITest",
-                "appium:udid": simulator,
-                "appium:deviceName": "iPhone 14",
-                "appium:platformVersion": "16.2",
+                "appium:udid": simulator.udid,
+                "appium:deviceName": simulator.name,
+                "appium:platformVersion": simulator.platform_version,
                 "appium:app": str(app_path),
                 "appium:noReset": True,
                 "appium:autoAcceptAlerts": True,
@@ -509,7 +626,7 @@ def test_ios_pairs_with_deployed_server(tmp_path: Path) -> None:
             wait_for_text(
                 driver,
                 "mnema.connection-status",
-                "Connected. Enable Mnema in Files.",
+                "Connected. Your archive is available in Files.",
                 timeout=45,
             )
             open_files_location(driver, "Mnema")

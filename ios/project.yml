@@ -16,9 +16,13 @@ targets:
       path: MnemaApp/Info.plist
       properties:
         CFBundleDisplayName: Mnema
+        AppGroupIdentifier: group.com.jparadasb.mnema
         KeychainAccessGroup: $(AppIdentifierPrefix)group.com.jparadasb.mnema
         NSLocalNetworkUsageDescription: Mnema connects to your local archive appliance.
         NSFileProviderDomainUsageDescription: Mnema makes your archived files available in the Files app.
+        CFBundleURLTypes:
+          - CFBundleURLName: com.jparadasb.mnema.pairing
+            CFBundleURLSchemes: [mnema]
         UILaunchScreen: {}
     entitlements:
       path: MnemaApp/Mnema.entitlements
@@ -41,10 +45,10 @@ targets:
       path: MnemaFileProvider/Info.plist
       properties:
         CFBundleDisplayName: Mnema Files
+        AppGroupIdentifier: group.com.jparadasb.mnema
         KeychainAccessGroup: $(AppIdentifierPrefix)group.com.jparadasb.mnema
         NSLocalNetworkUsageDescription: Mnema connects to your local archive appliance.
         NSExtension:
-          NSExtensionFileProviderDocumentGroup: group.com.jparadasb.mnema
           NSExtensionFileProviderSupportsEnumeration: true
           NSExtensionPointIdentifier: com.apple.fileprovider-nonui
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).FileProviderExtension

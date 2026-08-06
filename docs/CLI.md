@@ -33,6 +33,7 @@ sudo mnema configure storage
 sudo mnema configure cold-storage
 sudo mnema configure cloudflare
 sudo mnema configure file-provider
+sudo mnema configure telegram
 sudo mnema configure icloud
 sudo mnema configure sftpgo
 sudo mnema configure policy
@@ -43,6 +44,26 @@ root-owned files beneath `/etc/mnema/secrets`. `mnema config show` always redact
 locations. Each apply shows a redacted preview, validates storage and Compose, writes
 atomically, restarts affected services, checks health, and restores prior configuration
 on failure.
+
+### Telegram administration
+
+Telegram is disabled by default. Configure a bot token from a root-readable source
+file and one or more numeric Telegram user IDs. Only private chats from those IDs
+are accepted:
+
+```text
+sudo mnema configure telegram \
+  --enabled \
+  --token-file /safe/input/telegram-bot-token \
+  --allowed-user-ids 123456789 \
+  --yes
+```
+
+The bot runs as a separate Compose service. It exposes status, health, URLs, paired
+devices, a guarded archive projection, dry-run discovery, and device pairing. Pairing
+tokens expire after ten minutes and are single-use. The pairing response includes a
+copyable token, QR code, and `mnema://pair` link for the iOS app. Mnema asks for
+confirmation before consuming a deep-link token.
 
 Automation supplies secret file paths, never secret values:
 

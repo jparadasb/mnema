@@ -13,14 +13,15 @@ final class FileProviderItem: NSObject, NSFileProviderItem {
         return NSFileProviderItemIdentifier(parent)
     }
     var filename: String { remote.name }
-    var typeIdentifier: String {
-        remote.kind == "folder" ? UTType.folder.identifier : remote.contentType
+    var contentType: UTType {
+        remote.kind == "folder" ? .folder : UTType(remote.contentType) ?? .data
     }
-    var documentSize: NSNumber? { NSNumber(value: remote.size) }
-    var contentModificationDate: Date? { remote.modifiedAt }
     var itemVersion: NSFileProviderItemVersion {
-        NSFileProviderItemVersion(
-            contentVersion: Data(remote.contentVersion.utf8),
+        let contentVersion = remote.contentVersion.isEmpty
+            ? "metadata:\(remote.metadataVersion)"
+            : remote.contentVersion
+        return NSFileProviderItemVersion(
+            contentVersion: Data(contentVersion.utf8),
             metadataVersion: Data(remote.metadataVersion.utf8)
         )
     }
@@ -28,6 +29,7 @@ final class FileProviderItem: NSObject, NSFileProviderItem {
         var result: NSFileProviderItemCapabilities = [.allowsReading]
         if remote.kind == "folder" { result.insert(.allowsContentEnumerating) }
         if remote.capabilities.contains("addFile") { result.insert(.allowsAddingSubItems) }
+        if remote.capabilities.contains("delete") { result.insert(.allowsDeleting) }
         return result
     }
 }

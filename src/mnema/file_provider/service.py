@@ -254,6 +254,38 @@ def seal_upload(session: Session, settings: Settings, upload: FileProviderUpload
     return archive
 
 
+def cleanup_e2e_upload(session: Session, settings: Settings, item_id: str) -> None:
+    if os.getenv("MNEMA_ALLOW_TEST_DELETE") != "1":
+        raise PermissionError("test deletion is disabled")
+    item = session.get(FileProviderItem, item_id)
+    if item is None:
+        return
+    if not item.name.startswith("mnema-e2e-"):
+        raise PermissionError("only E2E-prefixed uploads may be cleaned")
+    upload = session.scalar(select(FileProviderUpload).where(FileProviderUpload.item_id == item.id))
+    if upload is None or upload.status != FileProviderUploadStatus.SEALED:
+        raise PermissionError("item is not a sealed File Provider upload")
+    archive = session.get(ArchiveItem, upload.archive_item_id)
+    if (
+        archive is None
+        or archive.source_provider != "file_provider_upload"
+        or archive.state != ArchiveState.LOCAL_STAGED
+    ):
+        raise PermissionError("upload is outside the E2E cleanup lifecycle")
+    root = settings.staging_root.resolve()
+    staged = settings.staging_root / f"{archive.id}.partial"
+    if staged.is_symlink() or staged.resolve(strict=False).parent != root:
+        raise PermissionError("E2E upload path is unsafe")
+    staged.unlink(missing_ok=True)
+    if staged.exists():
+        raise OSError("E2E upload cleanup could not be verified")
+    transition_item(session, archive, ArchiveState.TEST_CLEANED, actor="e2e-cleanup")
+    record_change(session, item.id, operation="DELETE")
+    session.delete(upload)
+    session.flush()
+    session.delete(item)
+
+
 def reconcile_sealing_uploads(database: Database, settings: Settings) -> int:
     recovered = 0
     with database.session() as session:
@@ -299,24 +331,74 @@ def project_verified_archives(session: Session) -> int:
         existing = session.scalar(
             select(FileProviderItem).where(FileProviderItem.archive_item_id == archive.id)
         )
-        if existing is not None:
-            continue
         collection_id, _ = COLLECTIONS.get(archive.source_provider, (LOCAL_ID, "Local Imports"))
+        original = safe_relative_path(archive.original_path)
         identifier = str(uuid.uuid5(uuid.NAMESPACE_URL, f"mnema:archive:{archive.id}"))
-        name = PurePosixPath(archive.original_path).name
-        item = FileProviderItem(
-            id=identifier,
-            parent_id=collection_id,
-            name=f"{archive.id}-{name}",
-            kind=FileProviderItemKind.FILE,
-            status=FileProviderItemStatus.READY,
-            archive_item_id=archive.id,
-            size=archive.original_size,
-            content_version=archive.plaintext_sha256 or "",
-            modified_at=archive.original_modified_at,
-        )
-        session.add(item)
-        session.flush()
-        record_change(session, item.id)
-        projected += 1
+        parent_id = collection_id
+        name = original.name
+        if archive.source_provider == "icloud_photos":
+            cumulative: list[str] = []
+            for component in original.parts[:-1]:
+                cumulative.append(component)
+                folder_id = str(
+                    uuid.uuid5(
+                        uuid.NAMESPACE_URL,
+                        f"mnema:collection:{archive.source_provider}:{'/'.join(cumulative)}",
+                    )
+                )
+                folder = session.get(FileProviderItem, folder_id)
+                if folder is None:
+                    display_name = component
+                    collision = session.scalar(
+                        select(FileProviderItem).where(
+                            FileProviderItem.parent_id == parent_id,
+                            FileProviderItem.name == display_name,
+                        )
+                    )
+                    if collision is not None:
+                        display_name = f"{component} (folder)"
+                    folder = FileProviderItem(
+                        id=folder_id,
+                        parent_id=parent_id,
+                        name=display_name,
+                        kind=FileProviderItemKind.FOLDER,
+                        status=FileProviderItemStatus.READY,
+                    )
+                    session.add(folder)
+                    session.flush()
+                    record_change(session, folder.id)
+                parent_id = folder.id
+            collision = session.scalar(
+                select(FileProviderItem).where(
+                    FileProviderItem.parent_id == parent_id,
+                    FileProviderItem.name == name,
+                    FileProviderItem.id != (existing.id if existing is not None else identifier),
+                )
+            )
+            if collision is not None:
+                path = PurePosixPath(name)
+                name = f"{path.stem}-archive-{archive.id}{path.suffix}"
+        else:
+            name = f"{archive.id}-{original.name}"
+        if existing is None:
+            existing = FileProviderItem(
+                id=identifier,
+                parent_id=parent_id,
+                name=name,
+                kind=FileProviderItemKind.FILE,
+                status=FileProviderItemStatus.READY,
+                archive_item_id=archive.id,
+                size=archive.original_size,
+                content_version=archive.plaintext_sha256 or "",
+                modified_at=archive.original_modified_at,
+            )
+            session.add(existing)
+            session.flush()
+            record_change(session, existing.id)
+            projected += 1
+        elif existing.parent_id != parent_id or existing.name != name:
+            existing.parent_id = parent_id
+            existing.name = name
+            record_change(session, existing.id)
+            projected += 1
     return projected

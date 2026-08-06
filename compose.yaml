@@ -155,6 +155,33 @@ services:
     security_opt: ["no-new-privileges:true"]
     healthcheck:
       disable: true
+  telegram-bot:
+    image: mnema:0.1.0
+    profiles: ["telegram"]
+    command: ["telegram-bot"]
+    restart: unless-stopped
+    env_file: [.env]
+    volumes:
+      - type: bind
+        source: ${MNEMA_HOST_CONFIG_ROOT:-./data/config}
+        target: /var/lib/mnema
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${MNEMA_HOST_ACTIVE_ROOT:-./data/active}
+        target: /data/active
+        bind: {create_host_path: false}
+      - type: bind
+        source: ./secrets
+        target: /run/secrets
+        read_only: true
+        bind: {create_host_path: false}
+    read_only: true
+    tmpfs: ["/tmp:mode=1777,size=64m"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      worker:
+        condition: service_started
   icloud-runner:
     image: mnema:0.1.0
     profiles: ["icloud"]

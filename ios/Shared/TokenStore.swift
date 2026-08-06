@@ -1,13 +1,15 @@
 import Foundation
 import Security
-#if targetEnvironment(simulator)
-import UIKit
-#endif
 
 enum TokenStore {
     private static let service = "com.jparadasb.mnema.fileprovider"
     #if targetEnvironment(simulator)
-    private static let simulatorPasteboard = UIPasteboard.general
+    private static var simulatorDefaults: UserDefaults? {
+        guard let identifier = Bundle.main.object(
+            forInfoDictionaryKey: "AppGroupIdentifier"
+        ) as? String else { return nil }
+        return UserDefaults(suiteName: identifier)
+    }
     #endif
     private static var group: String? {
         Bundle.main.object(forInfoDictionaryKey: "KeychainAccessGroup") as? String
@@ -25,12 +27,9 @@ enum TokenStore {
 
     static func save(_ value: String, account: String) throws {
         #if targetEnvironment(simulator)
-        var values = simulatorValues()
-        values[account] = value
-        simulatorPasteboard.string = try String(
-            data: JSONSerialization.data(withJSONObject: values),
-            encoding: .utf8
-        )
+        guard let defaults = simulatorDefaults else { throw CocoaError(.fileNoSuchFile) }
+        defaults.set(value, forKey: "\(service).\(account)")
+        guard defaults.synchronize() else { throw CocoaError(.fileWriteUnknown) }
         return
         #else
         let data = Data(value.utf8)
@@ -46,7 +45,7 @@ enum TokenStore {
 
     static func load(account: String) -> String? {
         #if targetEnvironment(simulator)
-        return simulatorValues()[account]
+        return simulatorDefaults?.string(forKey: "\(service).\(account)")
         #else
         var query = baseQuery(account: account)
         query.merge([
@@ -60,12 +59,21 @@ enum TokenStore {
         #endif
     }
 
-    #if targetEnvironment(simulator)
-    private static func simulatorValues() -> [String: String] {
-        guard let data = simulatorPasteboard.string?.data(using: .utf8),
-              let values = try? JSONSerialization.jsonObject(with: data) as? [String: String]
-        else { return [:] }
-        return values
+    static func remove(account: String) throws {
+        #if targetEnvironment(simulator)
+        guard let defaults = simulatorDefaults else { throw CocoaError(.fileNoSuchFile) }
+        defaults.removeObject(forKey: "\(service).\(account)")
+        guard defaults.synchronize() else { throw CocoaError(.fileWriteUnknown) }
+        #else
+        let status = SecItemDelete(baseQuery(account: account) as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw NSError(domain: NSOSStatusErrorDomain, code: Int(status))
+        }
+        #endif
     }
-    #endif
+
+    static func clearSession() throws {
+        try remove(account: "accessToken")
+        try remove(account: "refreshToken")
+    }
 }
