@@ -59,7 +59,19 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
         completionHandler: @escaping (NSFileProviderItem?, NSFileProviderItemFields, Bool, Error?) -> Void
     ) -> Progress {
         let progress = Progress(totalUnitCount: 1)
-        completionHandler(nil, changedFields, false, CocoaError(.featureUnsupported))
+        guard newContents == nil, changedFields.subtracting(.lastUsedDate).isEmpty else {
+            completionHandler(nil, changedFields, false, CocoaError(.featureUnsupported))
+            return progress
+        }
+        Task {
+            do {
+                let remote = try await client.item(remoteIdentifier(item.itemIdentifier))
+                progress.completedUnitCount = 1
+                completionHandler(FileProviderItem(remote), [], false, nil)
+            } catch {
+                completionHandler(nil, changedFields, false, error)
+            }
+        }
         return progress
     }
 
@@ -71,7 +83,13 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
         completionHandler: @escaping (Error?) -> Void
     ) -> Progress {
         let progress = Progress(totalUnitCount: 1)
-        completionHandler(CocoaError(.featureUnsupported))
+        Task {
+            do {
+                try await client.delete(remoteIdentifier(identifier))
+                progress.completedUnitCount = 1
+                completionHandler(nil)
+            } catch { completionHandler(error) }
+        }
         return progress
     }
 
@@ -93,7 +111,7 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
                 let identifier = try await client.upload(
                     file: url,
                     name: itemTemplate.filename,
-                    contentType: itemTemplate.typeIdentifier ?? UTType.data.identifier
+                    contentType: itemTemplate.contentType?.identifier ?? UTType.data.identifier
                 )
                 let item = try await client.item(identifier)
                 progress.completedUnitCount = 1

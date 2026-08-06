@@ -1,0 +1,11 @@
+{
+  "name": "mnema-ios-e2e",
+  "private": true,
+  "engines": {
+    "node": "20.x"
+  },
+  "devDependencies": {
+    "appium": "2.19.0",
+    "appium-xcuitest-driver": "7.26.3"
+  }
+}

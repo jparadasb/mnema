@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -163,6 +164,32 @@ class FileProviderConfig(BaseModel):
         return self
 
 
+class TelegramConfig(BaseModel):
+    enabled: bool = False
+    bot_token_file: Path = Path("/etc/mnema/secrets/telegram_bot_token")
+    allowed_user_ids: tuple[int, ...] = ()
+
+    @field_validator("bot_token_file")
+    @classmethod
+    def absolute_token_path(cls, value: Path) -> Path:
+        if not value.is_absolute():
+            raise ValueError("Telegram bot token path must be absolute")
+        return value
+
+    @field_validator("allowed_user_ids")
+    @classmethod
+    def valid_user_ids(cls, value: tuple[int, ...]) -> tuple[int, ...]:
+        if any(user_id <= 0 for user_id in value):
+            raise ValueError("Telegram user IDs must be positive integers")
+        return tuple(dict.fromkeys(value))
+
+    @model_validator(mode="after")
+    def enabled_configuration_is_complete(self) -> TelegramConfig:
+        if self.enabled and not self.allowed_user_ids:
+            raise ValueError("Telegram requires at least one allowed user ID")
+        return self
+
+
 class ICloudConfig(BaseModel):
     enabled: bool = False
     apple_id: str = ""
@@ -262,6 +289,7 @@ class ApplianceConfig(BaseModel):
     cold_storage: ColdStorageConfig = Field(default_factory=ColdStorageConfig)
     cloudflare: CloudflareConfig = Field(default_factory=CloudflareConfig)
     file_provider: FileProviderConfig = Field(default_factory=FileProviderConfig)
+    telegram: TelegramConfig = Field(default_factory=TelegramConfig)
     icloud: ICloudConfig = Field(default_factory=ICloudConfig)
     sftpgo: SFTPGoConfig = Field(default_factory=SFTPGoConfig)
     service: ServiceConfig = Field(default_factory=ServiceConfig)
@@ -281,6 +309,8 @@ class ApplianceConfig(BaseModel):
             profiles.append("cloudflare")
         if self.file_provider.enabled:
             profiles.append("file-provider")
+        if self.telegram.enabled:
+            profiles.append("telegram")
         environment = {
             "MNEMA_DATABASE_URL": "sqlite:////var/lib/mnema/mnema.db",
             "MNEMA_ACTIVE_ROOT": "/data/active",
@@ -331,6 +361,9 @@ class ApplianceConfig(BaseModel):
             "MNEMA_FILE_PROVIDER_MINIMUM_FREE_PERCENT": str(
                 self.file_provider.minimum_free_percent
             ),
+            "MNEMA_TELEGRAM_ENABLED": str(self.telegram.enabled).lower(),
+            "MNEMA_TELEGRAM_BOT_TOKEN_FILE": "/run/secrets/telegram_bot_token",
+            "MNEMA_TELEGRAM_ALLOWED_USER_IDS": json.dumps(list(self.telegram.allowed_user_ids)),
             "MNEMA_ICLOUD_ENABLED": str(self.icloud.enabled).lower(),
             "MNEMA_ICLOUD_APPLE_ID": self.icloud.apple_id,
             "MNEMA_ICLOUD_LIBRARY": "PrimarySync",
@@ -444,6 +477,7 @@ def redacted_payload(config: ApplianceConfig) -> dict[str, Any]:
     payload["cold_storage"]["rclone_config_file"] = "<secret-file>"
     payload["cold_storage"]["s3_access_key_file"] = "<secret-file>"
     payload["cold_storage"]["s3_secret_key_file"] = "<secret-file>"  # noqa: S105
+    payload["telegram"]["bot_token_file"] = "<secret-file>"  # noqa: S105
     if payload["icloud"]["apple_id"]:
         payload["icloud"]["apple_id"] = "<redacted-apple-id>"
     payload["icloud"]["session_directory"] = "<secret-directory>"

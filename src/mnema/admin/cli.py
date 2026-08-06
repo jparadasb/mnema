@@ -21,6 +21,7 @@ from mnema.admin.config import (
     ServiceConfig,
     SFTPGoConfig,
     StorageConfig,
+    TelegramConfig,
     load_config,
     redacted_payload,
     render_environment,
@@ -282,6 +283,33 @@ def _prompt_icloud(current: ICloudConfig) -> ICloudConfig:
     )
 
 
+def _prompt_telegram(
+    current: TelegramConfig,
+    manager: ApplianceManager,
+) -> tuple[TelegramConfig, dict[Path, str]]:
+    enabled = typer.confirm("Enable Telegram administration bot?", default=current.enabled)
+    if not enabled:
+        return TelegramConfig(enabled=False), {}
+    token_source = Path(typer.prompt("Path to Telegram bot token file"))
+    token_updates = _secret_file_update(token_source, manager.paths.secrets / "telegram_bot_token")
+    raw_ids = typer.prompt(
+        "Allowed Telegram user IDs (comma-separated)",
+        default=", ".join(str(user_id) for user_id in current.allowed_user_ids),
+    )
+    user_ids = _parse_telegram_user_ids(raw_ids)
+    return TelegramConfig(enabled=True, allowed_user_ids=user_ids), token_updates
+
+
+def _parse_telegram_user_ids(value: str) -> tuple[int, ...]:
+    try:
+        user_ids = tuple(int(part.strip()) for part in value.split(",") if part.strip())
+    except ValueError as error:
+        raise ValueError("Telegram user IDs must be comma-separated integers") from error
+    if not user_ids:
+        raise ValueError("Telegram requires at least one allowed user ID")
+    return user_ids
+
+
 @configure_app.callback()
 def configure_all(
     ctx: typer.Context,
@@ -298,6 +326,7 @@ def configure_all(
         cloudflare, token = _prompt_cloudflare(current.cloudflare)
         file_provider = _prompt_file_provider(current.file_provider, cloudflare)
         icloud = _prompt_icloud(current.icloud)
+        telegram, telegram_secrets = _prompt_telegram(current.telegram, manager)
         sftpgo = SFTPGoConfig(
             username=typer.prompt("SFTPGo username", default=current.sftpgo.username),
             bind_address=typer.prompt(
@@ -329,11 +358,13 @@ def configure_all(
                 "icloud": icloud,
                 "sftpgo": sftpgo,
                 "service": service,
+                "telegram": telegram,
             }
         )
         secret_updates = cold_secrets
         if token is not None:
             secret_updates.update(_cloudflare_token_update(manager, token))
+        secret_updates.update(telegram_secrets)
         _save(manager, config, yes=yes, secret_updates=secret_updates)
         if icloud.enabled:
             manager.icloud_auth()
@@ -544,6 +575,43 @@ def configure_file_provider(
             ),
         )
         _save(manager, current.model_copy(update={"file_provider": value}), yes=yes)
+    except (OSError, ValueError, ValidationError, PermissionError) as error:
+        _fail(error)
+
+
+@configure_app.command("telegram")
+def configure_telegram(
+    enabled: Annotated[bool | None, typer.Option("--enabled/--disabled")] = None,
+    token_file: Annotated[Path | None, typer.Option("--token-file")] = None,
+    allowed_user_ids: Annotated[str | None, typer.Option("--allowed-user-ids")] = None,
+    yes: Annotated[bool, typer.Option("--yes")] = False,
+) -> None:
+    manager = _manager()
+    try:
+        current = manager.config()
+        if enabled is None:
+            telegram, secret_updates = _prompt_telegram(current.telegram, manager)
+        elif not enabled:
+            telegram, secret_updates = TelegramConfig(enabled=False), {}
+        else:
+            if token_file is None:
+                raise ValueError("--token-file must reference the Telegram bot token")
+            if allowed_user_ids is None:
+                user_ids = current.telegram.allowed_user_ids
+            else:
+                user_ids = _parse_telegram_user_ids(allowed_user_ids)
+            telegram = TelegramConfig(enabled=True, allowed_user_ids=user_ids)
+            secret_updates = {
+                manager.paths.secrets / "telegram_bot_token": _secret_file_update(
+                    token_file, manager.paths.secrets / "telegram_bot_token"
+                )[manager.paths.secrets / "telegram_bot_token"]
+            }
+        _save(
+            manager,
+            current.model_copy(update={"telegram": telegram}),
+            yes=yes,
+            secret_updates=secret_updates,
+        )
     except (OSError, ValueError, ValidationError, PermissionError) as error:
         _fail(error)
 

@@ -76,6 +76,9 @@ class Settings(BaseSettings):
     file_provider_upload_root: Path = Path("/data/active/.mnema-file-provider")
     file_provider_max_file_size: Annotated[int, Field(gt=0)] = 53_687_091_200
     file_provider_minimum_free_percent: Annotated[float, Field(ge=1, le=50)] = 10
+    telegram_enabled: bool = False
+    telegram_bot_token_file: Path = Path("/run/secrets/telegram_bot_token")
+    telegram_allowed_user_ids: tuple[int, ...] = ()
     icloud_enabled: bool = False
     icloud_apple_id: str = ""
     icloud_library: Literal["PrimarySync"] = "PrimarySync"
@@ -100,6 +103,7 @@ class Settings(BaseSettings):
         "icloud_session_directory",
         "icloud_import_root",
         "file_provider_upload_root",
+        "telegram_bot_token_file",
     )
     @classmethod
     def absolute_paths(cls, value: Path) -> Path:
@@ -171,4 +175,12 @@ class Settings(BaseSettings):
         expected_endpoint = f"https://s3.{self.s3_region}.scw.cloud"
         if self.s3_endpoint_url != expected_endpoint:
             raise ValueError(f"Scaleway endpoint must be {expected_endpoint}")
+        return self
+
+    @model_validator(mode="after")
+    def telegram_configuration_is_safe(self) -> Settings:
+        if any(user_id <= 0 for user_id in self.telegram_allowed_user_ids):
+            raise ValueError("Telegram user IDs must be positive integers")
+        if self.telegram_enabled and not self.telegram_allowed_user_ids:
+            raise ValueError("Telegram requires at least one allowed user ID")
         return self

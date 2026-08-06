@@ -3,4 +3,6 @@
 <plist version="1.0"><dict>
   <key>com.apple.security.application-groups</key>
   <array><string>group.com.jparadasb.mnema</string></array>
+  <key>keychain-access-groups</key>
+  <array><string>$(AppIdentifierPrefix)group.com.jparadasb.mnema</string></array>
 </dict></plist>

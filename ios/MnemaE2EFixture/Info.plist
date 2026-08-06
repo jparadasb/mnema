@@ -2,12 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>AppGroupIdentifier</key>
-	<string>group.com.jparadasb.mnema</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Mnema</string>
+	<string>Mnema E2E Fixture</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -22,21 +20,10 @@
 	<string>1.0</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleURLName</key>
-			<string>com.jparadasb.mnema.pairing</string>
-			<key>CFBundleURLSchemes</key>
-			<array><string>mnema</string></array>
-		</dict>
-	</array>
-	<key>KeychainAccessGroup</key>
-	<string>$(AppIdentifierPrefix)group.com.jparadasb.mnema</string>
-	<key>NSFileProviderDomainUsageDescription</key>
-	<string>Mnema makes your archived files available in the Files app.</string>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>Mnema connects to your local archive appliance.</string>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
+	<key>UIFileSharingEnabled</key>
+	<true/>
 	<key>UILaunchScreen</key>
 	<dict/>
 </dict>

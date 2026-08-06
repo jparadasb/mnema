@@ -16,14 +16,21 @@ targets:
       path: MnemaApp/Info.plist
       properties:
         CFBundleDisplayName: Mnema
-        KeychainAccessGroup: group.com.jparadasb.mnema
+        AppGroupIdentifier: group.com.jparadasb.mnema
+        KeychainAccessGroup: $(AppIdentifierPrefix)group.com.jparadasb.mnema
+        NSLocalNetworkUsageDescription: Mnema connects to your local archive appliance.
         NSFileProviderDomainUsageDescription: Mnema makes your archived files available in the Files app.
+        CFBundleURLTypes:
+          - CFBundleURLName: com.jparadasb.mnema.pairing
+            CFBundleURLSchemes: [mnema]
         UILaunchScreen: {}
     entitlements:
       path: MnemaApp/Mnema.entitlements
       properties:
         com.apple.security.application-groups:
           - group.com.jparadasb.mnema
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)group.com.jparadasb.mnema
     settings:
       base:
         CODE_SIGN_ENTITLEMENTS: MnemaApp/Mnema.entitlements
@@ -38,9 +45,10 @@ targets:
       path: MnemaFileProvider/Info.plist
       properties:
         CFBundleDisplayName: Mnema Files
-        KeychainAccessGroup: group.com.jparadasb.mnema
+        AppGroupIdentifier: group.com.jparadasb.mnema
+        KeychainAccessGroup: $(AppIdentifierPrefix)group.com.jparadasb.mnema
+        NSLocalNetworkUsageDescription: Mnema connects to your local archive appliance.
         NSExtension:
-          NSExtensionFileProviderDocumentGroup: group.com.jparadasb.mnema
           NSExtensionFileProviderSupportsEnumeration: true
           NSExtensionPointIdentifier: com.apple.fileprovider-nonui
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).FileProviderExtension
@@ -49,6 +57,8 @@ targets:
       properties:
         com.apple.security.application-groups:
           - group.com.jparadasb.mnema
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)group.com.jparadasb.mnema
     settings:
       base:
         CODE_SIGN_ENTITLEMENTS: MnemaFileProvider/MnemaFileProvider.entitlements
@@ -60,6 +70,20 @@ targets:
     sources: [MnemaTests]
     dependencies:
       - target: Mnema
+  MnemaE2EFixture:
+    type: application
+    platform: iOS
+    sources: [MnemaE2EFixture]
+    info:
+      path: MnemaE2EFixture/Info.plist
+      properties:
+        CFBundleDisplayName: Mnema E2E Fixture
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        UILaunchScreen: {}
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.jparadasb.mnema.e2e-fixture
 schemes:
   Mnema:
     build:
@@ -68,3 +92,7 @@ schemes:
         MnemaFileProvider: all
     test:
       targets: [MnemaTests]
+  MnemaE2EFixture:
+    build:
+      targets:
+        MnemaE2EFixture: all

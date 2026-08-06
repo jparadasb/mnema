@@ -28,6 +28,7 @@ final class FileProviderEnumerator: NSObject, NSFileProviderEnumerator {
                     }
                     let items = latest.values.sorted { $0.id < $1.id }.map(FileProviderItem.init)
                     observer.didEnumerate(items)
+                    SharedSyncState.markSuccessfulSync()
                     observer.finishEnumerating(upTo: nil)
                     return
                 }
@@ -35,6 +36,7 @@ final class FileProviderEnumerator: NSObject, NSFileProviderEnumerator {
                 let response = try await client.children(identifier, offset: offset)
                 guard !invalidated else { return }
                 observer.didEnumerate(response.items.map(FileProviderItem.init))
+                SharedSyncState.markSuccessfulSync()
                 let next = response.nextOffset.map { NSFileProviderPage(Data(String($0).utf8)) }
                 observer.finishEnumerating(upTo: next)
             } catch {
@@ -55,15 +57,25 @@ final class FileProviderEnumerator: NSObject, NSFileProviderEnumerator {
                     observer.finishEnumeratingWithError(NSFileProviderError(.syncAnchorExpired))
                     return
                 }
-                observer.didUpdate(response.changes.compactMap(\.item).map(FileProviderItem.init))
+                if cursor?.isEmpty != false {
+                    SharedSyncState.markSuccessfulSync()
+                    observer.finishEnumeratingChanges(
+                        upTo: NSFileProviderSyncAnchor(Data(response.nextCursor.utf8)),
+                        moreComing: false
+                    )
+                    return
+                }
+                let updated = response.changes.compactMap(\.item)
+                observer.didUpdate(updated.map(FileProviderItem.init))
                 let deleted = response.changes.filter { $0.operation == "delete" }.map {
                     NSFileProviderItemIdentifier($0.itemId)
-                }
+                }.filter { $0 != .rootContainer }
                 if !deleted.isEmpty { observer.didDeleteItems(withIdentifiers: deleted) }
                 observer.finishEnumeratingChanges(
                     upTo: NSFileProviderSyncAnchor(Data(response.nextCursor.utf8)),
                     moreComing: response.more
                 )
+                SharedSyncState.markSuccessfulSync()
             } catch {
                 observer.finishEnumeratingWithError(error)
             }
