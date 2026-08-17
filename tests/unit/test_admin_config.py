@@ -131,9 +131,7 @@ def test_telegram_configuration_requires_allowlist_and_renders_profile() -> None
     with pytest.raises(ValueError, match="allowed user ID"):
         TelegramConfig(enabled=True)
 
-    config = ApplianceConfig(
-        telegram=TelegramConfig(enabled=True, allowed_user_ids=(12345, 12345))
-    )
+    config = ApplianceConfig(telegram=TelegramConfig(enabled=True, allowed_user_ids=(12345, 12345)))
     environment = config.runtime_environment()
     assert "telegram" in environment["COMPOSE_PROFILES"]
     assert environment["MNEMA_TELEGRAM_ALLOWED_USER_IDS"] == "[12345]"

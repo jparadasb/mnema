@@ -159,9 +159,7 @@ class TelegramBot:
     def _devices(self) -> str:
         with self.database.session() as session:
             devices = (
-                session.query(FileProviderDevice)
-                .order_by(FileProviderDevice.created_at)
-                .all()
+                session.query(FileProviderDevice).order_by(FileProviderDevice.created_at).all()
             )
             if not devices:
                 return "No paired devices."

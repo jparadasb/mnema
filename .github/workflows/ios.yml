@@ -41,6 +41,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-xcodegen
+      - name: Point the tool cache at a writable directory
+        run: |
+          tool_cache="$HOME/hostedtoolcache"
+          install -d "$tool_cache"
+          {
+            printf 'AGENT_TOOLSDIRECTORY=%s\n' "$tool_cache"
+            printf 'RUNNER_TOOL_CACHE=%s\n' "$tool_cache"
+          } >> "$GITHUB_ENV"
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
