@@ -26,6 +26,8 @@
 	<string>$(AppIdentifierPrefix)group.com.jparadasb.mnema</string>
 	<key>NSExtension</key>
 	<dict>
+		<key>NSExtensionFileProviderDocumentGroup</key>
+		<string>group.com.jparadasb.mnema</string>
 		<key>NSExtensionFileProviderSupportsEnumeration</key>
 		<true/>
 		<key>NSExtensionPointIdentifier</key>
