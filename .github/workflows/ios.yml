@@ -47,10 +47,17 @@ jobs:
       # runner account needs to own that directory:
       #   sudo mkdir -p /Users/runner/hostedtoolcache
       #   sudo chown "$(id -un)" /Users/runner /Users/runner/hostedtoolcache
-      - name: Verify the macOS tool cache is writable
+      # setup-python also installs Python with `sudo installer -pkg`, which
+      # hangs until the job timeout when the runner account has to type a
+      # password. Both preconditions are checked here so the job fails fast.
+      - name: Verify the macOS Python prerequisites
         run: |
           if [[ ! -w /Users/runner/hostedtoolcache ]]; then
             echo '::error::/Users/runner/hostedtoolcache must exist and be writable by the runner account; see the comment in .github/workflows/ios.yml.'
+            exit 1
+          fi
+          if ! sudo -n true 2>/dev/null; then
+            echo '::error::setup-python needs passwordless sudo for `installer`; without it the install step hangs until the job timeout.'
             exit 1
           fi
       - uses: actions/setup-python@v5
