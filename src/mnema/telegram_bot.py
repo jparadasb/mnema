@@ -139,11 +139,13 @@ class TelegramBot:
         callback = update.get("callback_query")
         callback_mapping: Mapping[str, Any] = callback if isinstance(callback, Mapping) else {}
         message = update.get("message") or callback_mapping.get("message")
-        source_message = update.get("message") or callback_mapping.get("message")
-        message_sender = (
-            source_message.get("from", {}) if isinstance(source_message, Mapping) else {}
-        )
-        sender_source = message_sender or callback_mapping.get("from", {})
+        # A button press carries the person who pressed it on the callback
+        # itself; the menu it hangs off was posted by the bot, so reading the
+        # message's sender identifies the bot and never the administrator.
+        if callback_mapping:
+            sender_source = callback_mapping.get("from", {})
+        else:
+            sender_source = message.get("from", {}) if isinstance(message, Mapping) else {}
         sender: Mapping[str, Any] = sender_source if isinstance(sender_source, Mapping) else {}
         return (
             isinstance(message, Mapping)
