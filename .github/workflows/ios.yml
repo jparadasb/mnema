@@ -40,6 +40,11 @@ jobs:
   build:
     timeout-minutes: 30
     runs-on: [self-hosted, macOS, X64]
+    env:
+      # The E2E helper otherwise picks the newest installed runtime, so a newly
+      # installed Xcode silently changes what CI tests. Pin a runtime above the
+      # app's 16.0 deployment target and boot it in both simulator steps.
+      MNEMA_IOS_E2E_RUNTIME: com.apple.CoreSimulator.SimRuntime.iOS-18-4
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-xcodegen
@@ -123,7 +128,8 @@ jobs:
         run: |
           simulator_id="$(xcrun simctl create \
             "Mnema CI $GITHUB_RUN_ID" \
-            com.apple.CoreSimulator.SimDeviceType.iPhone-14)"
+            com.apple.CoreSimulator.SimDeviceType.iPhone-14 \
+            "$MNEMA_IOS_E2E_RUNTIME")"
           cleanup() {
             xcrun simctl shutdown "$simulator_id" >/dev/null 2>&1 || true
             xcrun simctl delete "$simulator_id" >/dev/null 2>&1 || true
