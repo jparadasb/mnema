@@ -49,11 +49,18 @@ jobs:
       # `sudo installer -pkg`, which blocks on a password prompt. uv installs a
       # relocatable Python into the runner account instead, without sudo.
       - name: Provide Python 3.13
+        env:
+          UV_PYTHON_INSTALL_DIR: ${{ github.workspace }}/../mnema-uv-python
         run: |
           uv_prefix="$RUNNER_TEMP/mnema-uv"
           ./scripts/install-uv-macos.sh --prefix "$uv_prefix"
           venv="$RUNNER_TEMP/mnema-venv"
-          "$uv_prefix/bin/uv" venv --python 3.13 --seed "$venv"
+          # only-managed keeps uv on the interpreter it installed itself
+          # rather than whatever python3.13 happens to sit on the runner PATH,
+          # and --no-bin keeps the install out of the account's ~/.local/bin.
+          "$uv_prefix/bin/uv" python install --no-bin --python-preference only-managed 3.13
+          "$uv_prefix/bin/uv" venv --python-preference only-managed --python 3.13 --seed "$venv"
+          "$venv/bin/python" -c 'import sys; print(sys.executable); assert sys.version_info[:2] == (3, 13)'
           printf '%s/bin\n' "$venv" >> "$GITHUB_PATH"
       - uses: actions/setup-node@v4
         with:
