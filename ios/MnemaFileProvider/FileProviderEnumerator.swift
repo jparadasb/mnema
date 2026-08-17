@@ -57,14 +57,10 @@ final class FileProviderEnumerator: NSObject, NSFileProviderEnumerator {
                     observer.finishEnumeratingWithError(NSFileProviderError(.syncAnchorExpired))
                     return
                 }
-                if cursor?.isEmpty != false {
-                    SharedSyncState.markSuccessfulSync()
-                    observer.finishEnumeratingChanges(
-                        upTo: NSFileProviderSyncAnchor(Data(response.nextCursor.utf8)),
-                        moreComing: false
-                    )
-                    return
-                }
+                // A first sync starts from an empty anchor, and the appliance
+                // answers that with the whole backlog. Reporting no changes
+                // here still moved the anchor past every one of them, so the
+                // system recorded an empty archive it never asked about again.
                 let updated = response.changes.compactMap(\.item)
                 observer.didUpdate(updated.map(FileProviderItem.init))
                 let deleted = response.changes.filter { $0.operation == "delete" }.map {

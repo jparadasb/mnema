@@ -412,22 +412,73 @@ def click_if_present(driver: Any, name: str) -> bool:
     return False
 
 
-def open_files_location(driver: Any, *names: str) -> None:
-    driver.execute_script("mobile: activateApp", {"bundleId": FILES_BUNDLE_ID})
+def show_browse_root(driver: Any) -> None:
+    """Return the browser to the Locations list.
+
+    Files reopens wherever it was last left, and while a location's contents
+    are showing there is no back button to escape with, so the sidebar entries
+    this test navigates by are simply absent. Selecting the already-selected
+    Browse tab pops that stack back to the list.
+    """
     click_if_present(driver, "Browse")
+    for _ in range(6):
+        if not click_if_present(driver, "BackButton"):
+            break
+        time.sleep(0.4)
+    click_if_present(driver, "Browse")
+    time.sleep(0.5)
+
+
+def wait_for_files_item(driver: Any, *location: str, name: str, timeout: float = 120) -> None:
+    """Wait for a provider item to appear, reopening the folder while waiting.
+
+    A folder opened before the provider finishes its first sync keeps showing
+    the listing it was drawn with, so an item that arrives afterwards only
+    becomes visible once the view is rebuilt.
+    """
+    from appium.webdriver.common.appiumby import AppiumBy
+
+    deadline = time.monotonic() + timeout
+    while True:
+        if driver.find_elements(AppiumBy.ACCESSIBILITY_ID, name):
+            return
+        if time.monotonic() >= deadline:
+            break
+        time.sleep(2)
+        # Reopening is best effort: the sidebar is briefly unavailable while
+        # the provider reloads, and failing there would hide what is missing.
+        try_open_files_location(driver, *location)
+    source = driver.page_source
+    visible_names = sorted(set(re.findall(r'\bname="([^"]+)"', source)))
+    pytest.fail(f"Files never listed {name}; visible elements: {visible_names}")
+
+
+def try_open_files_location(driver: Any, *names: str, timeout: float = 30) -> bool:
+    driver.execute_script("mobile: activateApp", {"bundleId": FILES_BUNDLE_ID})
+    show_browse_root(driver)
     for index, name in enumerate(names):
-        deadline = time.monotonic() + 30
+        deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
+            # Locations carry a stable identifier; their plain label is also
+            # used by unrelated views such as the recents list.
+            if index == 0 and click_if_present(driver, f"DOC.sidebar.item.{name}"):
+                break
             if click_if_present(driver, name):
                 break
-            if index == 0 and click_if_present(driver, "BackButton"):
-                time.sleep(0.25)
-                continue
+            if index == 0:
+                show_browse_root(driver)
             time.sleep(0.25)
         else:
-            source = driver.page_source
-            visible_names = sorted(set(re.findall(r'\bname="([^"]+)"', source)))
-            pytest.fail(f"Files location is unavailable: {name}; visible elements: {visible_names}")
+            return False
+    return True
+
+
+def open_files_location(driver: Any, *names: str) -> None:
+    if try_open_files_location(driver, *names):
+        return
+    source = driver.page_source
+    visible_names = sorted(set(re.findall(r'\bname="([^"]+)"', source)))
+    pytest.fail(f"Files location is unavailable: {names}; visible elements: {visible_names}")
 
 
 def wait_for_upload(application: Any, settings: Settings, timeout: float = 45) -> int:
@@ -532,6 +583,7 @@ def test_ios_pairs_browses_downloads_and_uploads(tmp_path: Path) -> None:
             driver.find_element(AppiumBy.ACCESSIBILITY_ID, "mnema.connected-toggle")
 
             open_files_location(driver, "Mnema", "Inbox")
+            wait_for_files_item(driver, "Mnema", "Inbox", name=DOWNLOAD_NAME)
             click_named(driver, DOWNLOAD_NAME, timeout=60)
             deadline = time.monotonic() + 30
             while requests.get("/v1/items/1/content", 0) == 0 and time.monotonic() < deadline:
@@ -578,6 +630,12 @@ def test_ios_pairs_browses_downloads_and_uploads(tmp_path: Path) -> None:
             driver.get_screenshot_as_file(str(screenshot))
             (tmp_path / "ios-e2e-page-source.xml").write_text(driver.page_source, encoding="utf-8")
             capture_simulator_logs(simulator, tmp_path / "ios-e2e-system.log")
+            # What the extension asked the appliance for separates a provider
+            # that never called from one whose answers were not what Files
+            # needed, which the screenshot alone cannot distinguish.
+            (tmp_path / "ios-e2e-requests.json").write_text(
+                json.dumps(dict(requests), indent=2, sort_keys=True), encoding="utf-8"
+            )
             raise
         finally:
             driver.quit()
