@@ -49,6 +49,7 @@ targets:
         KeychainAccessGroup: $(AppIdentifierPrefix)group.com.jparadasb.mnema
         NSLocalNetworkUsageDescription: Mnema connects to your local archive appliance.
         NSExtension:
+          NSExtensionFileProviderDocumentGroup: group.com.jparadasb.mnema
           NSExtensionFileProviderSupportsEnumeration: true
           NSExtensionPointIdentifier: com.apple.fileprovider-nonui
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).FileProviderExtension
