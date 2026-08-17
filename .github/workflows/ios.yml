@@ -139,10 +139,15 @@ jobs:
       - name: Install pinned WebDriverAgent test tooling
         env:
           APPIUM_HOME: ${{ runner.temp }}/appium-home
+        # --source=local runs the driver's rebuild script, which needs the
+        # tsconfig.json that the published package omits. Install the same
+        # pinned version from npm instead, reading it from package.json so the
+        # two cannot drift.
         run: |
           npm ci
           python -m pip install -e '.[dev]'
-          npx appium driver install --source=local node_modules/appium-xcuitest-driver
+          driver_version="$(node -p "require('./package.json').devDependencies['appium-xcuitest-driver']")"
+          npx appium driver install --source=npm "appium-xcuitest-driver@${driver_version}"
       - name: Run Mnema File Provider simulator E2E
         env:
           APPIUM_HOME: ${{ runner.temp }}/appium-home
