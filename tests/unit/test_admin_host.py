@@ -105,6 +105,8 @@ def appliance_paths(tmp_path: Path) -> AppliancePaths:
         data_root=tmp_path / "data",
         service=tmp_path / "mnema.service",
         lock=tmp_path / "run/admin.lock",
+        cli_root=tmp_path / "opt/mnema-cli",
+        cli_link=tmp_path / "usr/local/bin/mnema",
     )
 
 
@@ -234,6 +236,89 @@ def test_release_update_and_rollback_use_verified_archive(
     assert (manager.paths.install_root / "compose.yaml").read_text(encoding="utf-8") == (
         "services: {}\n"
     )
+
+
+class CliRunner(FakeRunner):
+    """Stands in for python3/pip by materialising the launcher a venv provides."""
+
+    def run(
+        self,
+        arguments: list[str] | tuple[str, ...],
+        *,
+        check: bool = True,
+        capture_output: bool = False,
+    ) -> subprocess.CompletedProcess[str]:
+        values = list(arguments)
+        if values[1:3] == ["-m", "venv"]:
+            binaries = Path(values[3]) / "bin"
+            binaries.mkdir(parents=True, exist_ok=True)
+            (binaries / "python").write_text("#!/bin/sh\n", encoding="utf-8")
+            (binaries / "mnema").write_text("#!/bin/sh\n", encoding="utf-8")
+        return super().run(values, check=check, capture_output=capture_output)
+
+
+def test_update_reinstalls_the_admin_cli_from_the_new_source(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager, _, _ = configured_manager(tmp_path, monkeypatch)
+    runner = CliRunner()
+    manager = ApplianceManager(manager.paths, runner)
+    monkeypatch.setattr(manager, "require_root", lambda: None)
+    stale = manager.paths.cli_root / "venv-stale"
+    (stale / "bin").mkdir(parents=True)
+    manager.paths.cli_link.parent.mkdir(parents=True)
+    manager.paths.cli_link.symlink_to(stale / "bin" / "mnema")
+
+    launcher = manager._refresh_cli("abc123")
+
+    expected = manager.paths.cli_root / "venv-abc123" / "bin" / "mnema"
+    assert launcher == str(expected)
+    # The command now resolves to the environment built from the new source.
+    assert manager.paths.cli_link.resolve() == expected.resolve()
+    assert [str(manager.paths.install_root)] == [
+        call[-1] for call in runner.arguments if call[1:3] == ["-m", "pip"] and "install" in call
+    ][-1:]
+    # Superseded environments are cleaned up rather than accumulating.
+    assert not stale.exists()
+
+
+def test_update_reports_when_the_cli_cannot_be_reinstalled(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class BrokenRunner(FakeRunner):
+        def run(
+            self,
+            arguments: list[str] | tuple[str, ...],
+            *,
+            check: bool = True,
+            capture_output: bool = False,
+        ) -> subprocess.CompletedProcess[str]:
+            values = list(arguments)
+            if values[1:3] == ["-m", "venv"]:
+                raise subprocess.CalledProcessError(1, values)
+            return super().run(values, check=check, capture_output=capture_output)
+
+    manager, _, _ = configured_manager(tmp_path, monkeypatch)
+    manager = ApplianceManager(manager.paths, BrokenRunner())
+    monkeypatch.setattr(manager, "require_root", lambda: None)
+    manager.paths.cli_root.mkdir(parents=True)
+
+    with pytest.raises(RuntimeError, match="bootstrap-cli.sh"):
+        manager._refresh_cli("abc123")
+
+    assert not (manager.paths.cli_root / "venv-abc123").exists()
+
+
+def test_update_leaves_an_unmanaged_cli_alone(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager, _, runner = configured_manager(tmp_path, monkeypatch)
+
+    assert manager._refresh_cli("abc123") is None
+    assert not any(call[1:3] == ["-m", "venv"] for call in runner.arguments)
 
 
 def test_health_wait_retries_and_rollback_forces_container_recreation(

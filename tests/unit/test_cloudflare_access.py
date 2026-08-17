@@ -39,7 +39,7 @@ async def test_public_web_fails_closed_without_valid_cloudflare_token(
         cloudflare_validator=FakeAccessValidator("valid-assertion"),
     )
     async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=application),
+        transport=httpx.ASGITransport(app=application, client=("172.20.0.9", 51234)),
         base_url="https://admin.example.com",
     ) as client:
         missing = await client.get("/healthz")
@@ -51,10 +51,40 @@ async def test_public_web_fails_closed_without_valid_cloudflare_token(
             "/healthz",
             headers={"Cf-Access-Jwt-Assertion": "valid-assertion"},
         )
+        protected = await client.get("/setup")
 
     assert missing.status_code == 403
     assert invalid.status_code == 403
     assert valid.status_code == 200
+    assert protected.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_public_web_answers_the_container_healthcheck_over_loopback(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(
+        database_url=f"sqlite:///{tmp_path / 'cloudflare-probe.sqlite'}",
+        secret_key_file=tmp_path / "none",
+        cloudflare_access_required=True,
+        cloudflare_team_domain="https://mnema.cloudflareaccess.com",
+        cloudflare_audience="test-audience",
+    )
+    application = create_app(
+        settings,
+        cloudflare_validator=FakeAccessValidator("valid-assertion"),
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=application, client=("127.0.0.1", 51234)),
+        base_url="http://127.0.0.1:8080",
+    ) as client:
+        health = await client.get("/healthz")
+        other = await client.get("/setup")
+
+    assert health.status_code == 200
+    assert health.json() == {"status": "ok"}
+    # The exemption is scoped to the probe endpoint, not to loopback callers.
+    assert other.status_code == 403
 
 
 @pytest.mark.asyncio

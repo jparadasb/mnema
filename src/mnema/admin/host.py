@@ -37,6 +37,8 @@ class AppliancePaths:
     data_root: Path = Path("/var/lib/mnema")
     service: Path = Path("/etc/systemd/system/mnema.service")
     lock: Path = Path("/run/lock/mnema-admin.lock")
+    cli_root: Path = Path("/opt/mnema-cli")
+    cli_link: Path = Path("/usr/local/bin/mnema")
 
     @property
     def environment(self) -> Path:
@@ -1016,7 +1018,58 @@ class ApplianceManager:
                 json.dumps(metadata, sort_keys=True) + "\n",
                 mode=0o600,
             )
+        self._refresh_cli(release)
         return release
+
+    def _refresh_cli(self, release: str) -> str | None:
+        """Reinstall the admin CLI from the source this update just staged.
+
+        The stack runs from the rebuilt image, but the `mnema` command runs
+        from its own virtual environment, so without this the appliance keeps
+        answering with the previous release's commands. The replacement is
+        built beside the live environment and the launcher is moved into place
+        once it is complete, because this process is running from the
+        environment being replaced.
+        """
+        if not self.paths.cli_root.is_dir():
+            return None
+        staged = self.paths.cli_root / f"venv-{release}"
+        if staged.exists():
+            shutil.rmtree(staged)
+        try:
+            self.runner.run(["python3", "-m", "venv", str(staged)])
+            python = staged / "bin" / "python"
+            self.runner.run([str(python), "-m", "pip", "install", "--upgrade", "pip==25.1.1"])
+            self.runner.run([str(python), "-m", "pip", "install", str(self.paths.install_root)])
+            launcher = staged / "bin" / "mnema"
+            if not launcher.is_file():
+                raise RuntimeError("refreshed CLI is missing its launcher")
+            previous = self._current_cli_target()
+            temporary = self.paths.cli_link.with_name(f".{self.paths.cli_link.name}.{release}")
+            temporary.unlink(missing_ok=True)
+            temporary.symlink_to(launcher)
+            os.replace(temporary, self.paths.cli_link)
+        except Exception as error:
+            shutil.rmtree(staged, ignore_errors=True)
+            bootstrap = self.paths.install_root / "scripts" / "bootstrap-cli.sh"
+            raise RuntimeError(
+                "the appliance was updated but the mnema command still runs the "
+                f"previous release; rerun {bootstrap}: {error}"
+            ) from error
+        self._prune_cli_environments(keep={staged, previous})
+        return str(launcher)
+
+    def _current_cli_target(self) -> Path | None:
+        try:
+            return self.paths.cli_link.resolve(strict=True).parent.parent
+        except OSError:
+            return None
+
+    def _prune_cli_environments(self, *, keep: set[Path | None]) -> None:
+        retained = {path for path in keep if path is not None}
+        for candidate in self.paths.cli_root.glob("venv-*"):
+            if candidate.is_dir() and candidate not in retained:
+                shutil.rmtree(candidate, ignore_errors=True)
 
     def latest_github_release(self, repository: str = "jparadasb/mnema") -> GitHubRelease:
         if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
