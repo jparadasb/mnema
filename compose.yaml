@@ -179,6 +179,8 @@ services:
     tmpfs: ["/tmp:mode=1777,size=64m"]
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      disable: true
     depends_on:
       worker:
         condition: service_started
