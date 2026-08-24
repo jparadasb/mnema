@@ -2,10 +2,50 @@ from __future__ import annotations
 
 import hashlib
 import os
+import shutil
+import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
 from mnema.domain.storage import resolve_beneath, safe_relative_path
+
+# Leave room for filesystem overhead and a concurrent small write.
+SCRATCH_MARGIN_BYTES = 64 * 1024 * 1024
+
+
+class InsufficientScratchSpace(OSError):
+    """Raised when a staging location cannot hold the work about to be done."""
+
+
+@contextmanager
+def scratch_directory(
+    root: Path | None,
+    prefix: str,
+    *,
+    required_bytes: int = 0,
+) -> Iterator[Path]:
+    """Yield a temporary directory sized for the work about to run.
+
+    Cold-storage encryption, verification, and restore all materialise whole
+    files. Defaulting those to the system temporary directory put them on a
+    container tmpfs of a few hundred megabytes, so every file larger than that
+    failed with ENOSPC reported as an ordinary retryable error. Passing a root on
+    real storage removes the ceiling; the preflight turns a late ENOSPC into an
+    early, specific refusal.
+    """
+    if root is not None:
+        root.mkdir(parents=True, exist_ok=True)
+    target = root if root is not None else Path(tempfile.gettempdir())
+    if required_bytes:
+        free = shutil.disk_usage(target).free
+        if free < required_bytes:
+            raise InsufficientScratchSpace(
+                f"scratch space at {target} has {free} bytes free but {required_bytes} are required"
+            )
+    with tempfile.TemporaryDirectory(prefix=prefix, dir=root) as directory:
+        yield Path(directory)
 
 
 @dataclass(frozen=True)

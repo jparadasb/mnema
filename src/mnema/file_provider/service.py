@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import logging
 import os
 import shutil
 import uuid
@@ -28,6 +29,8 @@ from mnema.jobs.models import (
     utcnow,
 )
 from mnema.jobs.state_service import transition_item
+
+LOGGER = logging.getLogger("mnema.file_provider")
 
 ROOT_ID = "root"
 INBOX_ID = "inbox"
@@ -80,6 +83,37 @@ def bootstrap_roots(session: Session) -> None:
             session.flush()
             record_change(session, identifier)
     _setting(session, "file_provider_generation")
+
+
+def _aware(value: datetime) -> datetime:
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+
+
+def _suffixed(name: str, suffix: str) -> str:
+    path = PurePosixPath(name)
+    return f"{path.stem}-{suffix}{path.suffix}"
+
+
+def unique_child_name(session: Session, parent_id: str, desired: str, *, item_id: str) -> str:
+    """Return a name unique among a parent's children.
+
+    ``(parent_id, name)`` is a unique index, so moving an item into a folder
+    that already holds that name raises IntegrityError. Callers used to let it
+    propagate, which burned a retry attempt and eventually failed the item
+    outright. Candidates are derived from the item identifier rather than a
+    counter so the same item always resolves to the same name on retry.
+    """
+    for candidate in (desired, _suffixed(desired, item_id[:8]), _suffixed(desired, item_id)):
+        clash = session.scalar(
+            select(FileProviderItem.id).where(
+                FileProviderItem.parent_id == parent_id,
+                FileProviderItem.name == candidate,
+                FileProviderItem.id != item_id,
+            )
+        )
+        if clash is None:
+            return candidate
+    raise ValueError("cannot derive a unique File Provider name")
 
 
 def record_change(session: Session, item_id: str, operation: str = "UPSERT") -> int:
@@ -146,12 +180,15 @@ def create_upload(
     if size < 0 or size > settings.file_provider_max_file_size:
         raise ValueError("upload size exceeds configured limit")
     usage = shutil.disk_usage(settings.active_root)
-    projected_free = usage.free - size
+    # The staged copy, plus the encrypt/verify scratch peak that holds the
+    # ciphertext and the decrypted plaintext at the same time. Reserving only
+    # the staged copy accepted uploads that could never finish archiving.
+    projected_free = usage.free - size * 3
     if (
         projected_free < 0
         or projected_free * 100 / usage.total < settings.file_provider_minimum_free_percent
     ):
-        raise OSError("active storage reserve would be violated")
+        raise OSError("active storage cannot hold this upload and its verification scratch")
     if sha256 is not None and (
         len(sha256) != 64 or any(c not in "0123456789abcdef" for c in sha256)
     ):
@@ -287,16 +324,37 @@ def cleanup_e2e_upload(session: Session, settings: Settings, item_id: str) -> No
 
 
 def reconcile_sealing_uploads(database: Database, settings: Settings) -> int:
+    """Finish uploads interrupted mid-seal.
+
+    Each upload is reconciled in its own transaction: one unsealable upload used
+    to raise out of the loop and abort worker startup entirely.
+    """
     recovered = 0
     with database.session() as session:
-        uploads = session.scalars(
-            select(FileProviderUpload).where(
-                FileProviderUpload.status == FileProviderUploadStatus.SEALING
-            )
-        ).all()
-        for upload in uploads:
-            seal_upload(session, settings, upload)
-            recovered += 1
+        pending = [
+            upload.id
+            for upload in session.scalars(
+                select(FileProviderUpload).where(
+                    FileProviderUpload.status == FileProviderUploadStatus.SEALING
+                )
+            ).all()
+        ]
+    for upload_id in pending:
+        try:
+            with database.session() as session:
+                upload = session.get(FileProviderUpload, upload_id)
+                if upload is None:
+                    continue
+                seal_upload(session, settings, upload)
+                recovered += 1
+        except (ValueError, OSError, RuntimeError):
+            LOGGER.exception("could not seal interrupted upload", extra={"upload": upload_id})
+            with database.session() as session:
+                upload = session.get(FileProviderUpload, upload_id)
+                if upload is None:
+                    continue
+                upload.status = FileProviderUploadStatus.FAILED
+                mark_upload_failed(session, upload.item_id, "seal_failed")
     return recovered
 
 
@@ -306,19 +364,66 @@ def promote_upload(session: Session, archive: ArchiveItem, item_id: str) -> None
     item = session.get(FileProviderItem, item_id)
     if item is None or item.status == FileProviderItemStatus.READY:
         return
+    # Inbox names come straight from the phone and collide freely; the archive
+    # identifier makes the promoted name deterministic and matches the name
+    # project_verified_archives derives for the same item.
+    prefix = f"{archive.id}-"
+    desired = item.name if item.name.startswith(prefix) else f"{prefix}{item.name}"
+    item.name = unique_child_name(session, UPLOADS_ID, desired, item_id=item.id)
     item.parent_id = UPLOADS_ID
     item.status = FileProviderItemStatus.READY
     item.error_message = None
     record_change(session, item.id)
 
 
-def mark_upload_failed(session: Session, item_id: str, message: str) -> None:
+def mark_upload_failed(session: Session, item_id: str, code: str) -> None:
+    """Record a stable failure code on an item.
+
+    ``error_message`` is served to paired devices, so it carries a short code
+    only. The full redacted detail belongs in the job's ``last_error``.
+    """
     item = session.get(FileProviderItem, item_id)
     if item is None:
         return
     item.status = FileProviderItemStatus.FAILED
-    item.error_message = message[:500]
+    item.error_message = code[:120]
     record_change(session, item.id)
+
+
+def reap_expired_uploads(database: Database, settings: Settings) -> int:
+    """Release staged bytes for uploads that can never complete.
+
+    Nothing previously cleaned up expired uploads, so their partial files
+    occupied active storage forever while still counting against the free-space
+    reserve that create_upload checks before accepting new work.
+    """
+    reaped = 0
+    now = datetime.now(UTC)
+    with database.session() as session:
+        uploads = session.scalars(
+            select(FileProviderUpload).where(
+                FileProviderUpload.status == FileProviderUploadStatus.OPEN
+            )
+        ).all()
+        for upload in uploads:
+            if _aware(upload.expires_at) > now:
+                continue
+            path = upload_path(settings, upload.id)
+            if path.is_file() and not path.is_symlink():
+                path.unlink(missing_ok=True)
+            upload.status = FileProviderUploadStatus.FAILED
+            mark_upload_failed(session, upload.item_id, "upload_expired")
+            archive = session.get(ArchiveItem, upload.archive_item_id)
+            if archive is not None and archive.state != ArchiveState.MANUAL_REVIEW:
+                transition_item(
+                    session,
+                    archive,
+                    ArchiveState.MANUAL_REVIEW,
+                    actor="upload-reaper",
+                    details={"reason": "upload expired before completion"},
+                )
+            reaped += 1
+    return reaped
 
 
 def project_verified_archives(session: Session) -> int:
@@ -348,15 +453,11 @@ def project_verified_archives(session: Session) -> int:
                 )
                 folder = session.get(FileProviderItem, folder_id)
                 if folder is None:
-                    display_name = component
-                    collision = session.scalar(
-                        select(FileProviderItem).where(
-                            FileProviderItem.parent_id == parent_id,
-                            FileProviderItem.name == display_name,
-                        )
+                    # A single fixed "(folder)" suffix collided again on the
+                    # second clash and aborted the whole projection.
+                    display_name = unique_child_name(
+                        session, parent_id, component, item_id=folder_id
                     )
-                    if collision is not None:
-                        display_name = f"{component} (folder)"
                     folder = FileProviderItem(
                         id=folder_id,
                         parent_id=parent_id,
@@ -368,18 +469,19 @@ def project_verified_archives(session: Session) -> int:
                     session.flush()
                     record_change(session, folder.id)
                 parent_id = folder.id
-            collision = session.scalar(
-                select(FileProviderItem).where(
-                    FileProviderItem.parent_id == parent_id,
-                    FileProviderItem.name == name,
-                    FileProviderItem.id != (existing.id if existing is not None else identifier),
-                )
+            name = unique_child_name(
+                session,
+                parent_id,
+                name,
+                item_id=existing.id if existing is not None else identifier,
             )
-            if collision is not None:
-                path = PurePosixPath(name)
-                name = f"{path.stem}-archive-{archive.id}{path.suffix}"
         else:
-            name = f"{archive.id}-{original.name}"
+            name = unique_child_name(
+                session,
+                parent_id,
+                f"{archive.id}-{original.name}",
+                item_id=existing.id if existing is not None else identifier,
+            )
         if existing is None:
             existing = FileProviderItem(
                 id=identifier,

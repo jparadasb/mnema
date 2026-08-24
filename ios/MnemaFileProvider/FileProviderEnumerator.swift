@@ -28,6 +28,9 @@ final class FileProviderEnumerator: NSObject, NSFileProviderEnumerator {
                     }
                     let items = latest.values.sorted { $0.id < $1.id }.map(FileProviderItem.init)
                     observer.didEnumerate(items)
+                    // These items are now reported, so the anchor may advance to
+                    // the cursor they were read at — and only to that cursor.
+                    SharedSyncState.storeSyncAnchor(response.nextCursor)
                     SharedSyncState.markSuccessfulSync()
                     observer.finishEnumerating(upTo: nil)
                     return
@@ -49,33 +52,36 @@ final class FileProviderEnumerator: NSObject, NSFileProviderEnumerator {
         for observer: NSFileProviderChangeObserver,
         from syncAnchor: NSFileProviderSyncAnchor
     ) {
-        let cursor = String(data: syncAnchor.rawValue, encoding: .utf8)
+        let anchor = String(data: syncAnchor.rawValue, encoding: .utf8)
+        let cursor = (anchor?.isEmpty ?? true) ? nil : anchor
         Task {
             do {
-                let response = try await client.changes(cursor: cursor?.isEmpty == true ? nil : cursor)
+                let response = try await client.changes(cursor: cursor)
                 if response.resetRequired {
+                    SharedSyncState.clearSyncAnchor()
                     observer.finishEnumeratingWithError(NSFileProviderError(.syncAnchorExpired))
                     return
                 }
-                if cursor?.isEmpty != false {
-                    SharedSyncState.markSuccessfulSync()
-                    observer.finishEnumeratingChanges(
-                        upTo: NSFileProviderSyncAnchor(Data(response.nextCursor.utf8)),
-                        moreComing: false
-                    )
-                    return
-                }
-                let updated = response.changes.compactMap(\.item)
-                observer.didUpdate(updated.map(FileProviderItem.init))
+                guard !invalidated else { return }
+                // Deletions are applied before updates so that a delete followed
+                // by a re-create inside one page settles on the created item.
                 let deleted = response.changes.filter { $0.operation == "delete" }.map {
                     NSFileProviderItemIdentifier($0.itemId)
                 }.filter { $0 != .rootContainer }
                 if !deleted.isEmpty { observer.didDeleteItems(withIdentifiers: deleted) }
+                let updated = response.changes
+                    .filter { $0.operation != "delete" }
+                    .compactMap(\.item)
+                if !updated.isEmpty { observer.didUpdate(updated.map(FileProviderItem.init)) }
+                // Only advance past changes that were actually reported. The
+                // previous code fast-forwarded the anchor on an empty cursor
+                // without emitting anything, permanently skipping those changes.
+                SharedSyncState.storeSyncAnchor(response.nextCursor)
+                SharedSyncState.markSuccessfulSync()
                 observer.finishEnumeratingChanges(
                     upTo: NSFileProviderSyncAnchor(Data(response.nextCursor.utf8)),
                     moreComing: response.more
                 )
-                SharedSyncState.markSuccessfulSync()
             } catch {
                 observer.finishEnumeratingWithError(error)
             }
@@ -83,9 +89,14 @@ final class FileProviderEnumerator: NSObject, NSFileProviderEnumerator {
     }
 
     func currentSyncAnchor(completionHandler: @escaping (NSFileProviderSyncAnchor?) -> Void) {
-        Task {
-            let response = try? await client.changes(cursor: nil)
-            completionHandler(response.map { NSFileProviderSyncAnchor(Data($0.nextCursor.utf8)) })
+        // Report the anchor this extension has actually reported items up to.
+        // Returning the server's newest cursor claimed we were already current
+        // and silently dropped every pending change; returning nil makes the
+        // system perform a full re-enumeration, which is the safe fallback.
+        guard let stored = SharedSyncState.syncAnchor, !stored.isEmpty else {
+            completionHandler(nil)
+            return
         }
+        completionHandler(NSFileProviderSyncAnchor(Data(stored.utf8)))
     }
 }

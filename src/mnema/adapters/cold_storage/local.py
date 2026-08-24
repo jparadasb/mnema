@@ -2,21 +2,31 @@ from __future__ import annotations
 
 import asyncio
 import os
-import tempfile
 from pathlib import Path
 
 from mnema.adapters.cold_storage.base import ColdReceipt
 from mnema.adapters.cold_storage.crypto import decrypt_file, encrypt_file, sha256_hex
-from mnema.adapters.nas.fileops import fsync_directory
+from mnema.adapters.nas.fileops import (
+    SCRATCH_MARGIN_BYTES,
+    fsync_directory,
+    scratch_directory,
+)
 
 
 class LocalEncryptedColdStorage:
     """Local protocol proof used when MinIO is unavailable."""
 
-    def __init__(self, root: Path, key: bytes, bucket: str = "mnema-test") -> None:
+    def __init__(
+        self,
+        root: Path,
+        key: bytes,
+        bucket: str = "mnema-test",
+        scratch_root: Path | None = None,
+    ) -> None:
         self.root = root
         self.key = key
         self.bucket = bucket
+        self.scratch_root = scratch_root
         self.root.mkdir(parents=True, exist_ok=True)
 
     async def upload(
@@ -42,8 +52,12 @@ class LocalEncryptedColdStorage:
         )
 
     async def verify(self, receipt: ColdReceipt, expected_sha256: str) -> bool:
-        with tempfile.TemporaryDirectory(prefix="mnema-cold-verify-") as directory:
-            restored = Path(directory) / "plain"
+        with scratch_directory(
+            self.scratch_root,
+            "mnema-cold-verify-",
+            required_bytes=receipt.remote_size + SCRATCH_MARGIN_BYTES,
+        ) as directory:
+            restored = directory / "plain"
             await self.restore(receipt, restored)
             return sha256_hex(restored) == expected_sha256
 

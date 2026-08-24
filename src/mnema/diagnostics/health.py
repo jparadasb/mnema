@@ -66,8 +66,14 @@ def startup_checks(
     *,
     smart_health_file: Path | None = None,
     require_smart_health: bool = False,
-    recover_expired_jobs: bool = True,
+    recover_expired_jobs: bool = False,
 ) -> StartupHealth:
+    """Inspect appliance health.
+
+    Read-only by default. Reclaiming expired job leases mutates the queue and
+    must only happen in the worker's own boot path: doing it from a diagnostic
+    command steals the lease of a job the worker is still executing.
+    """
     active = storage_health(active_root)
     backup = storage_health(backup_root)
     devices_differ = False

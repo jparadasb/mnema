@@ -3,12 +3,12 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-import tempfile
 from pathlib import Path
 from typing import Any
 
 from mnema.adapters.cold_storage.base import ColdReceipt
 from mnema.adapters.cold_storage.crypto import decrypt_file, encrypt_file, sha256_hex
+from mnema.adapters.nas.fileops import SCRATCH_MARGIN_BYTES, scratch_directory
 
 _IDEMPOTENCY_KEY = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 
@@ -27,7 +27,9 @@ class RcloneEncryptedColdStorage:
         config_file: Path,
         key: bytes,
         executable: str = "rclone",
+        scratch_root: Path | None = None,
     ) -> None:
+        self.scratch_root = scratch_root
         if ":" not in remote_root or any(character in remote_root for character in "\r\n\0"):
             raise ValueError("rclone remote root must use remote:path syntax")
         if not config_file.is_absolute():
@@ -92,8 +94,12 @@ class RcloneEncryptedColdStorage:
         object_path = self._object_path(idempotency_key)
         stat = await self._stat(object_path)
         if stat is None:
-            with tempfile.TemporaryDirectory(prefix="mnema-rclone-upload-") as directory:
-                encrypted = Path(directory) / "encrypted"
+            with scratch_directory(
+                self.scratch_root,
+                "mnema-rclone-upload-",
+                required_bytes=source.stat().st_size + SCRATCH_MARGIN_BYTES,
+            ) as directory:
+                encrypted = directory / "encrypted"
                 encrypt_file(source, encrypted, self.key)
                 await self._run("copyto", "--immutable", str(encrypted), object_path)
             stat = await self._stat(object_path)
@@ -111,8 +117,12 @@ class RcloneEncryptedColdStorage:
         )
 
     async def verify(self, receipt: ColdReceipt, expected_sha256: str) -> bool:
-        with tempfile.TemporaryDirectory(prefix="mnema-rclone-verify-") as directory:
-            restored = Path(directory) / "plain"
+        with scratch_directory(
+            self.scratch_root,
+            "mnema-rclone-verify-",
+            required_bytes=2 * receipt.remote_size + SCRATCH_MARGIN_BYTES,
+        ) as directory:
+            restored = directory / "plain"
             await self.restore(receipt, restored)
             return sha256_hex(restored) == expected_sha256
 
@@ -121,8 +131,12 @@ class RcloneEncryptedColdStorage:
 
     async def restore(self, receipt: ColdReceipt, destination: Path) -> None:
         self._validate_receipt(receipt)
-        with tempfile.TemporaryDirectory(prefix="mnema-rclone-restore-") as directory:
-            encrypted = Path(directory) / "encrypted"
+        with scratch_directory(
+            self.scratch_root,
+            "mnema-rclone-restore-",
+            required_bytes=receipt.remote_size + SCRATCH_MARGIN_BYTES,
+        ) as directory:
+            encrypted = directory / "encrypted"
             await self._run("copyto", "--immutable", receipt.object_identifier, str(encrypted))
             decrypt_file(encrypted, destination, self.key)
 

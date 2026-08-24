@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     backup_root: Path = Path("/data/backup")
     staging_root: Path = Path("/data/staging")
     source_root: Path = Path("/data/test-source")
+    scratch_root: Path | None = None
     secret_key_file: Path = Path("/run/secrets/mnema_secret_key")
     cold_encryption_key_file: Path = Path("/run/secrets/mnema_cold_key")
     kopia_password_file: Path = Path("/run/secrets/kopia_password")
@@ -91,6 +92,23 @@ class Settings(BaseSettings):
     icloud_cleanup_quarantine_days: Annotated[int, Field(ge=1, le=3650)] = 7
     icloud_cleanup_max_assets: Annotated[int, Field(ge=1, le=1000)] = 1000
     icloud_cleanup_max_quota_percent: Annotated[float, Field(gt=0, le=10)] = 10
+
+    @field_validator("scratch_root")
+    @classmethod
+    def absolute_scratch_root(cls, value: Path | None) -> Path | None:
+        if value is not None and not value.is_absolute():
+            raise ValueError("storage paths must be absolute")
+        return value
+
+    @property
+    def scratch_directory(self) -> Path:
+        """Where whole-file encryption, verification, and restore stage bytes.
+
+        Defaults to active storage rather than the system temporary directory:
+        in the appliance the latter is a container tmpfs of a few hundred
+        megabytes, which silently capped the largest archivable file.
+        """
+        return self.scratch_root or self.active_root / ".mnema-scratch"
 
     @field_validator(
         "active_root",

@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import math
 import re
-import tempfile
 from pathlib import Path
 from typing import Any, Literal
 
@@ -11,6 +10,7 @@ import boto3  # type: ignore[import-untyped]
 
 from mnema.adapters.cold_storage.base import ColdReceipt, ColdRestorePending
 from mnema.adapters.cold_storage.crypto import decrypt_file, encrypt_file, sha256_hex
+from mnema.adapters.nas.fileops import SCRATCH_MARGIN_BYTES, scratch_directory
 
 _SINGLE_COPY_LIMIT = 5 * 1024**3
 _MIN_COPY_PART_SIZE = 64 * 1024**2
@@ -32,10 +32,12 @@ class S3EncryptedColdStorage:
         provider_name: str = "s3",
         archive_storage_class: Literal["GLACIER"] | None = None,
         restore_days: int = 1,
+        scratch_root: Path | None = None,
         client: Any | None = None,
     ) -> None:
         self.bucket = bucket
         self.key = key
+        self.scratch_root = scratch_root
         self.create_bucket_if_missing = create_bucket_if_missing
         self.provider_name = provider_name
         self.archive_storage_class = archive_storage_class
@@ -74,8 +76,13 @@ class S3EncryptedColdStorage:
             raise ValueError("invalid S3 idempotency key")
         await self._ensure_bucket()
         key = f"mnema/{idempotency_key}.mnema"
-        with tempfile.TemporaryDirectory(prefix="mnema-s3-upload-") as directory:
-            encrypted = Path(directory) / "encrypted"
+        plaintext_size = source.stat().st_size
+        with scratch_directory(
+            self.scratch_root,
+            "mnema-s3-upload-",
+            required_bytes=plaintext_size + SCRATCH_MARGIN_BYTES,
+        ) as directory:
+            encrypted = directory / "encrypted"
             encrypt_file(source, encrypted, self.key)
             try:
                 head = await asyncio.to_thread(
@@ -111,8 +118,14 @@ class S3EncryptedColdStorage:
             )
 
     async def verify(self, receipt: ColdReceipt, expected_sha256: str) -> bool:
-        with tempfile.TemporaryDirectory(prefix="mnema-s3-verify-") as directory:
-            restored = Path(directory) / "plain"
+        # Verification holds the downloaded ciphertext and the decrypted
+        # plaintext at the same time.
+        with scratch_directory(
+            self.scratch_root,
+            "mnema-s3-verify-",
+            required_bytes=2 * receipt.remote_size + SCRATCH_MARGIN_BYTES,
+        ) as directory:
+            restored = directory / "plain"
             await self.restore(receipt, restored)
             return sha256_hex(restored) == expected_sha256
 
@@ -238,8 +251,12 @@ class S3EncryptedColdStorage:
                     "Glacier restore requested; retry after Scaleway finishes retrieval",
                     requested=requested,
                 )
-        with tempfile.TemporaryDirectory(prefix="mnema-s3-restore-") as directory:
-            encrypted = Path(directory) / "encrypted"
+        with scratch_directory(
+            self.scratch_root,
+            "mnema-s3-restore-",
+            required_bytes=receipt.remote_size + SCRATCH_MARGIN_BYTES,
+        ) as directory:
+            encrypted = directory / "encrypted"
             await asyncio.to_thread(
                 self.client.download_file,
                 receipt.bucket,

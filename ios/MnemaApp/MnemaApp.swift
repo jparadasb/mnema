@@ -120,6 +120,7 @@ final class ConnectionModel: ObservableObject {
         statusMessage = "Disconnecting this phone…"
         do {
             try await removeFileProviderDomain()
+            SharedSyncState.clearSyncAnchor()
             try TokenStore.clearSession()
             state = .disconnected
             statusMessage = "Disconnected locally. Other phones are unchanged."
@@ -185,6 +186,9 @@ final class ConnectionModel: ObservableObject {
 
     private func recreateFileProviderDomain() async throws {
         try await removeFileProviderDomain()
+        // Pairing anew means a different server generation; a carried-over
+        // anchor would point past changes this device has never seen.
+        SharedSyncState.clearSyncAnchor()
         let domain = NSFileProviderDomain(identifier: domainIdentifier, displayName: "Mnema")
         try await NSFileProviderManager.add(domain)
     }

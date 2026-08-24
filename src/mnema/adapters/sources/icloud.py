@@ -1,9 +1,42 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from mnema.adapters.sources.local import LocalFilesystemSourceAdapter
 from mnema.domain.source import AuthenticationStatus, DeleteReceipt, DiscoveryPage, SourceObject
+
+
+def icloud_session_status(
+    session_directory: Path,
+    *,
+    last_success: datetime | None,
+    last_result: str | None,
+    stale_after: timedelta = timedelta(days=2),
+    now: datetime | None = None,
+) -> AuthenticationStatus:
+    """Derive iCloud session health from evidence, not from a directory existing.
+
+    Three distinct states used to collapse into one optimistic answer: no
+    session at all, a session whose last import failed, and a session that has
+    simply not run recently.
+    """
+    now = now or datetime.now(UTC)
+    present = session_directory.is_dir() and any(
+        path.is_file() and not path.is_symlink() for path in session_directory.rglob("*")
+    )
+    if not present:
+        return AuthenticationStatus(False, "iCloud authentication required")
+    if last_result == "failed":
+        return AuthenticationStatus(
+            False, "last iCloud import failed; reauthentication may be required"
+        )
+    if last_success is None:
+        return AuthenticationStatus(False, "iCloud session has never completed an import")
+    aware = last_success if last_success.tzinfo else last_success.replace(tzinfo=UTC)
+    if now - aware > stale_after:
+        return AuthenticationStatus(False, f"no successful iCloud import since {aware.isoformat()}")
+    return AuthenticationStatus(True, f"last iCloud import succeeded at {aware.isoformat()}")
 
 
 class ICloudDriveSourceAdapter:
@@ -16,17 +49,35 @@ class ICloudDriveSourceAdapter:
 class ICloudPhotosSourceAdapter(LocalFilesystemSourceAdapter):
     """Read-only view of originals downloaded into Mnema active storage."""
 
-    def __init__(self, root: Path, session_directory: Path, *, page_size: int = 100) -> None:
+    def __init__(
+        self,
+        root: Path,
+        session_directory: Path,
+        *,
+        page_size: int = 100,
+        last_success: datetime | None = None,
+        last_result: str | None = None,
+        stale_after: timedelta = timedelta(days=2),
+    ) -> None:
         super().__init__(root, page_size=page_size, allow_delete=False)
         self.session_directory = session_directory
+        self.last_success = last_success
+        self.last_result = last_result
+        self.stale_after = stale_after
 
     async def authentication_status(self) -> AuthenticationStatus:
-        authenticated = self.session_directory.is_dir() and any(
-            path.is_file() and not path.is_symlink() for path in self.session_directory.rglob("*")
-        )
-        return AuthenticationStatus(
-            authenticated,
-            "iCloud session present" if authenticated else "iCloud authentication required",
+        """Report whether imports are actually working.
+
+        Apple's web sessions expire on their own schedule. Treating the mere
+        presence of a cookie file as proof of authentication reported a healthy
+        session for as long as the directory survived, while every scheduled
+        import failed unnoticed.
+        """
+        return icloud_session_status(
+            self.session_directory,
+            last_success=self.last_success,
+            last_result=self.last_result,
+            stale_after=self.stale_after,
         )
 
     async def discover(self, cursor: str | None = None) -> DiscoveryPage:
