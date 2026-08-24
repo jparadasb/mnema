@@ -44,3 +44,35 @@ def test_telegram_authorization_requires_private_allowlisted_chat(tmp_path: Path
         assert not bot.authorized(unknown)
     finally:
         database.close()
+
+
+def test_telegram_authorization_reads_the_sender_of_a_button_press(tmp_path: Path) -> None:
+    settings = Settings(
+        database_url=f"sqlite:///{tmp_path / 'mnema.sqlite'}",
+        telegram_enabled=True,
+        telegram_allowed_user_ids=(42,),
+    )
+    from mnema.jobs import Database
+
+    database = Database(settings.database_url)
+    database.create_schema()
+    try:
+        bot = TelegramBot(settings, database, StubAPI())
+
+        def press(sender_id: int) -> dict[str, object]:
+            # The menu a button hangs off was posted by the bot, so the message
+            # carries the bot's identity and only the callback carries the
+            # person who pressed it.
+            return {
+                "callback_query": {
+                    "id": "callback-1",
+                    "from": {"id": sender_id},
+                    "message": {"chat": {"type": "private"}, "from": {"id": 8974313908}},
+                    "data": "status",
+                }
+            }
+
+        assert bot.authorized(press(42))
+        assert not bot.authorized(press(99))
+    finally:
+        database.close()
