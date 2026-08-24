@@ -33,17 +33,20 @@ def build_local_workflow(
 
     backup: VersionedBackup
     cold: ColdStorage
+    scratch = settings.scratch_directory
     if settings.use_external_test_storage:
         backup = KopiaBackup(
             settings.kopia_repository,
             settings.kopia_password_file,
             settings.kopia_config_file,
+            scratch_root=scratch,
         )
         if settings.cold_storage_transport == "rclone":
             cold = RcloneEncryptedColdStorage(
                 remote_root=settings.rclone_remote_root,
                 config_file=settings.rclone_config_file,
                 key=key,
+                scratch_root=scratch,
             )
         else:
             cold = S3EncryptedColdStorage(
@@ -56,10 +59,13 @@ def build_local_workflow(
                 create_bucket_if_missing=settings.s3_provider == "generic",
                 provider_name=("scaleway-glacier" if settings.s3_provider == "scaleway" else "s3"),
                 archive_storage_class=("GLACIER" if settings.s3_provider == "scaleway" else None),
+                scratch_root=scratch,
             )
     else:
         backup = FilesystemVersionedBackup(settings.backup_root / "mnema-test-repository")
-        cold = LocalEncryptedColdStorage(settings.backup_root / "mnema-test-cold", key)
+        cold = LocalEncryptedColdStorage(
+            settings.backup_root / "mnema-test-cold", key, scratch_root=scratch
+        )
 
     return ArchiveWorkflow(
         source=source

@@ -13,7 +13,7 @@ from mnema.adapters.sources.local import SourceChangedError
 from mnema.config import DeletionLimits, SourcePolicy
 from mnema.domain.source import SourceAdapter, SourceObject
 from mnema.domain.states import ArchiveState
-from mnema.domain.storage import resolve_beneath
+from mnema.domain.storage import UnsafePath, resolve_beneath
 from mnema.jobs.models import ArchiveItem, utcnow
 from mnema.jobs.state_service import transition_item
 from mnema.policies.deletion import (
@@ -127,6 +127,16 @@ class ArchiveWorkflow:
         if item.state == ArchiveState.DOWNLOADING:
             staged = partial_path(self.staging_root, item.id)
             if staged.exists():
+                # Never discard staged bytes the source cannot supply again.
+                # Uploads arrive over HTTP and have no re-readable source, so an
+                # unconditional unlink here destroyed the only copy.
+                try:
+                    await self.source.stat(item.source_identifier)
+                except (OSError, UnsafePath) as error:
+                    raise VerificationFailure(
+                        "staged partial cannot be re-downloaded from the source; "
+                        "refusing to discard it"
+                    ) from error
                 staged.unlink()
             try:
                 receipt = await self.source.download(item.source_identifier, staged)

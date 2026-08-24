@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from mnema.adapters.backup.filesystem import FilesystemVersionedBackup
 from mnema.adapters.cold_storage.local import LocalEncryptedColdStorage
 from mnema.adapters.nas.fileops import sha256_file
+from mnema.adapters.sources.icloud import icloud_session_status
 from mnema.adapters.sources.icloud_control import ICloudControlError, PyiCloudControlClient
 from mnema.adapters.sources.local import LocalFilesystemSourceAdapter
 from mnema.admin.cli import register_admin_commands
@@ -42,6 +43,7 @@ from mnema.jobs.models import (
     RuntimeSetting,
 )
 from mnema.policies.deletion import DeletionRunUsage
+from mnema.security.redaction import redact
 from mnema.worker.main import run_worker
 
 app = typer.Typer(no_args_is_help=True, help="Mnema — Your cloud, remembered.")
@@ -462,14 +464,35 @@ def _require_icloud(settings: Settings) -> None:
     settings.icloud_session_directory.mkdir(parents=True, exist_ok=True)
 
 
+class ICloudRunFailed(RuntimeError):
+    """icloudpd exited non-zero. Carries the evidence needed to diagnose it."""
+
+    def __init__(self, exit_code: int, detail: str) -> None:
+        super().__init__(
+            f"icloudpd exited {exit_code}: {detail}" if detail else f"icloudpd exited {exit_code}"
+        )
+        self.exit_code = exit_code
+        self.detail = detail
+
+
 def _run_icloudpd(arguments: list[str], *, interactive: bool) -> None:
+    """Run icloudpd, keeping enough of its output to explain a failure.
+
+    Discarding the exit code and stderr reduced every distinct failure —
+    expired session, network loss, Apple schema change, rate limit — to one
+    indistinguishable error.
+    """
     result = subprocess.run(  # noqa: S603 - fixed executable and audited argument array
         arguments,
         check=False,
         stdin=None if interactive else subprocess.DEVNULL,
+        stderr=None if interactive else subprocess.PIPE,
+        text=True,
     )
     if result.returncode:
-        raise RuntimeError("iCloud authentication or download failed")
+        captured = (result.stderr or "").strip().splitlines()
+        detail = str(redact(" | ".join(captured[-3:])))[:500]
+        raise ICloudRunFailed(result.returncode, detail)
 
 
 @app.command("icloud-auth-internal", hidden=True)
@@ -584,7 +607,11 @@ def icloud_sync_internal() -> None:
             )
         except Exception as error:
             _set_runtime_value(database, "icloud_last_result", "failed")
-            _set_runtime_value(database, "icloud_last_error", type(error).__name__)
+            _set_runtime_value(
+                database,
+                "icloud_last_error",
+                str(redact(f"{type(error).__name__}: {error}"))[:500],
+            )
             raise
         finally:
             database.close()
@@ -608,20 +635,28 @@ def icloud_status_internal() -> None:
         last_result = session.get(RuntimeSetting, "icloud_last_result")
         last_success = session.get(RuntimeSetting, "icloud_last_success")
         last_error = session.get(RuntimeSetting, "icloud_last_error")
-    authenticated = settings.icloud_session_directory.is_dir() and any(
-        candidate.is_file() and not candidate.is_symlink()
-        for candidate in settings.icloud_session_directory.rglob("*")
+    success_at: datetime | None = None
+    if last_success and last_success.value:
+        try:
+            success_at = datetime.fromisoformat(last_success.value)
+        except ValueError:
+            success_at = None
+    status = icloud_session_status(
+        settings.icloud_session_directory,
+        last_success=success_at,
+        last_result=last_result.value if last_result else None,
     )
     typer.echo(
         json.dumps(
             {
                 "enabled": settings.icloud_enabled,
-                "authenticated": authenticated,
-                "reauthentication_required": settings.icloud_enabled and not authenticated,
+                "authenticated": status.authenticated,
+                "session_detail": status.detail,
+                "reauthentication_required": settings.icloud_enabled and not status.authenticated,
                 "items": total,
                 "last_result": last_result.value if last_result else "never",
                 "last_success": last_success.value if last_success else None,
-                "last_error_type": last_error.value if last_error and last_error.value else None,
+                "last_error": last_error.value if last_error and last_error.value else None,
             },
             indent=2,
         )

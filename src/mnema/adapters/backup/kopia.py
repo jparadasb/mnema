@@ -7,7 +7,7 @@ import tempfile
 from pathlib import Path
 
 from mnema.adapters.backup.base import BackupReceipt
-from mnema.adapters.nas.fileops import sha256_file
+from mnema.adapters.nas.fileops import scratch_directory, sha256_file
 
 
 class KopiaBackup:
@@ -16,10 +16,12 @@ class KopiaBackup:
         repository: Path,
         password_file: Path,
         config_file: Path,
+        scratch_root: Path | None = None,
     ) -> None:
         self.repository = repository
         self.password_file = password_file
         self.config_file = config_file
+        self.scratch_root = scratch_root
         self._connection_lock = asyncio.Lock()
 
     def _environment(self) -> dict[str, str]:
@@ -89,8 +91,10 @@ class KopiaBackup:
         return BackupReceipt(str(payload["id"]))
 
     async def verify(self, receipt: BackupReceipt, expected_sha256: str) -> bool:
-        with tempfile.TemporaryDirectory(prefix="mnema-kopia-verify-") as directory:
-            destination = Path(directory) / "restored"
+        # Restoring a snapshot materialises the whole file, so this must not
+        # land on the container tmpfs.
+        with scratch_directory(self.scratch_root, "mnema-kopia-verify-") as directory:
+            destination = directory / "restored"
             await self.restore(receipt, destination)
             return sha256_file(destination) == expected_sha256
 

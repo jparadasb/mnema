@@ -110,11 +110,19 @@ class DurableQueue:
             session.add(heartbeat)
         heartbeat.heartbeat_at = now
 
-    def succeed(self, session: Session, job: Job, worker_id: str) -> None:
-        self._require_owner(job, worker_id)
+    def succeed(self, session: Session, job: Job, worker_id: str) -> bool:
+        """Mark a completed job successful.
+
+        Returns False without raising when the lease was reclaimed while the
+        work ran. Completion is real either way, but another worker may already
+        own the job, and stealing it back would double-run the payload.
+        """
+        if not self._owns(job, worker_id):
+            return False
         job.status = JobStatus.SUCCEEDED
         job.lease_owner = None
         job.lease_expires_at = None
+        return True
 
     def fail(
         self,
@@ -124,9 +132,21 @@ class DurableQueue:
         error: str,
         *,
         base_backoff_seconds: int = 5,
-    ) -> None:
-        self._require_owner(job, worker_id)
-        job.last_error = str(redact(error))
+    ) -> bool:
+        """Record a failure and schedule the retry.
+
+        Never raises on a lost lease: this runs inside the caller's exception
+        handler, so raising here would replace the real error with a lease
+        complaint and take the worker process down with it.
+        """
+        message = str(redact(error))
+        if job.lease_owner is not None and job.lease_owner != worker_id:
+            return False
+        job.last_error = message
+        if not self._owns(job, worker_id):
+            # The lease expired and recovery already rescheduled this job.
+            # Only the error text is ours to contribute.
+            return False
         job.lease_owner = None
         job.lease_expires_at = None
         if job.attempts >= job.max_attempts:
@@ -137,6 +157,7 @@ class DurableQueue:
             job.available_at = _now() + timedelta(
                 seconds=math.pow(2, exponent) * base_backoff_seconds
             )
+        return True
 
     def recover_expired(self, session: Session, *, now: datetime | None = None) -> int:
         now = now or _now()
@@ -171,6 +192,10 @@ class DurableQueue:
         )
 
     @staticmethod
+    def _owns(job: Job, worker_id: str) -> bool:
+        return job.status == JobStatus.RUNNING and job.lease_owner == worker_id
+
+    @staticmethod
     def _require_owner(job: Job, worker_id: str) -> None:
-        if job.status != JobStatus.RUNNING or job.lease_owner != worker_id:
+        if not DurableQueue._owns(job, worker_id):
             raise RuntimeError("worker does not own job lease")

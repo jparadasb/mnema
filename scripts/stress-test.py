@@ -36,7 +36,7 @@ from mnema.jobs import Database
 from mnema.jobs.models import ArchiveItem, AuditEvent, RuntimeSetting
 from mnema.jobs.state_service import transition_item
 from mnema.worker.main import Worker
-from mnema.worker.recovery import reconcile_interrupted_items
+from mnema.worker.recovery import RESUME_IN_PLACE, reconcile_interrupted_items
 
 MIB = 1024 * 1024
 GIB = 1024 * MIB
@@ -429,17 +429,27 @@ async def run_failure_case(
         workflow.source = LocalFilesystemSourceAdapter(roots["source"])
         workflow.backup = FilesystemVersionedBackup(roots["backup"])
         workflow.cold = LocalEncryptedColdStorage(roots["cold"], b"s" * 32)
+        # Steps whose active copy is already committed and verified resume where
+        # they stopped; only an unfinished transfer rewinds to the source.
+        resumes_in_place = interrupted_state in RESUME_IN_PLACE
+        expected_recovered = (
+            interrupted_state if resumes_in_place else ArchiveState.FAILED_RETRYABLE
+        )
         with database.session() as session:
             recovered_item = session.get(ArchiveItem, item_id)
-            if recovered_item is None or recovered_item.state != ArchiveState.FAILED_RETRYABLE:
-                raise RuntimeError(f"{stage} did not become retryable")
-            transition_item(
-                session,
-                recovered_item,
-                ArchiveState.QUEUED,
-                actor="stress-harness",
-                details={"approved_test_retry": True},
-            )
+            if recovered_item is None or recovered_item.state != expected_recovered:
+                raise RuntimeError(
+                    f"{stage} recovered to {recovered_item and recovered_item.state.value}, "
+                    f"expected {expected_recovered.value}"
+                )
+            if not resumes_in_place:
+                transition_item(
+                    session,
+                    recovered_item,
+                    ArchiveState.QUEUED,
+                    actor="stress-harness",
+                    details={"approved_test_retry": True},
+                )
             await workflow.archive(session, recovered_item)
             if recovered_item.state.value != ArchiveState.QUARANTINED.value:
                 raise RuntimeError(f"{stage} retry did not finish")
@@ -461,7 +471,7 @@ async def run_failure_case(
         return {
             "stage": stage,
             "interrupted_state": interrupted_state.value,
-            "recovered_state": ArchiveState.FAILED_RETRYABLE.value,
+            "recovered_state": expected_recovered.value,
             "final_state": ArchiveState.QUARANTINED.value,
             "local_restore_verified": local_verified,
             "remote_restore_verified": remote_verified,
@@ -528,15 +538,15 @@ async def run_external_failure_recovery(args: argparse.Namespace) -> dict[str, A
     workflow = external_workflow(roots, backend)
     with database.session() as session:
         item = session.scalar(select(ArchiveItem))
-        if item is None or item.state != ArchiveState.FAILED_RETRYABLE:
-            raise RuntimeError("external interrupted item did not become retryable")
-        transition_item(
-            session,
-            item,
-            ArchiveState.QUEUED,
-            actor="stress-harness",
-            details={"approved_test_retry": True},
-        )
+        # The interruption happens after the active copy is committed and
+        # verified, so recovery resumes the cold step in place rather than
+        # rewinding the item to a re-download.
+        if item is None or item.state != ArchiveState.COLD_UPLOAD_PENDING:
+            raise RuntimeError(
+                f"external interrupted item is {item and item.state.value}, "
+                f"expected {ArchiveState.COLD_UPLOAD_PENDING.value}"
+            )
+        recovered_state = item.state
         await workflow.archive(session, item)
         if item.state.value != ArchiveState.QUARANTINED.value:
             raise RuntimeError("external retry did not finish")
@@ -562,7 +572,7 @@ async def run_external_failure_recovery(args: argparse.Namespace) -> dict[str, A
         raise RuntimeError("database integrity failed after external recovery")
     return {
         "phase": "recover",
-        "recovered_state": ArchiveState.FAILED_RETRYABLE.value,
+        "recovered_state": recovered_state.value,
         "final_state": ArchiveState.QUARANTINED.value,
         "local_restore_verified": local_verified,
         "remote_restore_verified": remote_verified,
