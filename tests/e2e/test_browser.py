@@ -20,6 +20,14 @@ from mnema.web.app import create_app
 ADMIN_PASSWORD = "browser-test-password"  # noqa: S105 - synthetic E2E credential
 ONBOARDING_TOKEN = "browser-test-onboarding-token"  # noqa: S105 - synthetic E2E token
 
+# Playwright's 5s default is too tight for this journey on a shared runner. The
+# first dashboard render runs the full startup health check — SQLite integrity,
+# disk usage, and storage identity — so under CPU contention the redirect after
+# login lands after the assertion has already given up, and the failure reads
+# as "still on /login" rather than "the page was slow". Overridable so a local
+# run can tighten it back up.
+ASSERTION_TIMEOUT_MS = float(os.getenv("MNEMA_E2E_TIMEOUT_MS", "20000"))
+
 
 def browser_executable(browser_type: BrowserType) -> str | None:
     configured = os.getenv("MNEMA_E2E_CHROMIUM")
@@ -109,8 +117,10 @@ def test_complete_mobile_administration_journey(tmp_path: Path) -> None:
             onboarding_token_file=onboarding,
         )
         with running_application(settings) as base_url, sync_playwright() as playwright:
+            expect.set_options(timeout=ASSERTION_TIMEOUT_MS)
             browser = launch_browser(playwright)
             page = browser.new_page(viewport={"width": 390, "height": 844})
+            page.set_default_navigation_timeout(ASSERTION_TIMEOUT_MS)
             page.goto(f"{base_url}/setup")
             expect(page.get_by_role("heading", name="Setup")).to_be_visible()
             expect(page.locator(".warning")).to_contain_text("different mounted devices")
