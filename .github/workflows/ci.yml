@@ -9,12 +9,23 @@ on:
 permissions:
   contents: read
 concurrency:
+  # Per-ref, so pushing again to a branch cancels its superseded run.
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   quality:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, Linux, X64, mnema, buildx]
+    # There is one self-hosted runner, and the workflow-level group is keyed on
+    # ref, so a push to main and a pull-request run belong to different groups
+    # and used to execute at the same time on the same machine. The browser E2E
+    # journey then competed with a multi-arch image build for the same CPU and
+    # exceeded its 5s navigation assertions. This job-level group is shared
+    # across refs and across both jobs, so heavy work queues instead of
+    # colliding. Parallelism on a single runner was illusory anyway.
+    concurrency:
+      group: mnema-self-hosted-runner
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -31,6 +42,11 @@ jobs:
   image:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, Linux, X64, mnema, buildx]
+    # Same group as `quality`: the multi-arch build is the CPU hog that starved
+    # the test run.
+    concurrency:
+      group: mnema-self-hosted-runner
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
       - run: cp deploy/compose/.env.example .env
